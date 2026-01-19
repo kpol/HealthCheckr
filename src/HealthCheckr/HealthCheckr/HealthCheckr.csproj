@@ -11,7 +11,7 @@
     <RepositoryUrl>https://github.com/kpol/HealthCheckr</RepositoryUrl>
     <PackageTags>health;health-check;.net</PackageTags>
     <Title>HealthCheckr</Title>
-    <Authors>kiripol</Authors>
+    <Authors>Kirill Polishchuk</Authors>
   </PropertyGroup>
 
   <ItemGroup>
