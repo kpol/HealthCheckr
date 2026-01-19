@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="HealthCheckr.Func/HealthCheckr.Func.csproj" Id="6643e8ca-c38f-478e-822c-925e8d70aa56" />
+  <Project Path="HealthCheckr/HealthCheckr.csproj" />
+</Solution>
