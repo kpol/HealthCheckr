@@ -81,9 +81,9 @@ Console.WriteLine(result.ToJson());
 
 ## Configuration
 
-* `IncludeErrors` – Include exception details for failing checks.
-* `IncludeDuration` – Include execution duration per check.
-* `HealthyHttpStatusCode` / `DegradedHttpStatusCode` / `UnhealthyHttpStatusCode` – Customize HTTP response codes for overall status.
+* `IncludeErrors` &ndash; Include exception details for failing checks.
+* `IncludeDuration` &ndash; Include execution duration per check.
+* `HealthyHttpStatusCode` / `DegradedHttpStatusCode` / `UnhealthyHttpStatusCode` &ndash; Customize HTTP response codes for overall status.
 
 ---
 
