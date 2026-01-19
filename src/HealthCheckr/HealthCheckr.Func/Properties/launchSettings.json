@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "HealthCheckr.Func": {
+      "commandName": "Project",
+      "commandLineArgs": "--port 7082",
+      "launchBrowser": false
+    }
+  }
+}
