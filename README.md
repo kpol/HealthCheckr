@@ -1,9 +1,6 @@
 # HealthCheckr
 
-A lightweight, async-friendly health check library for .NET and Azure Functions.
-Runs multiple health checks in parallel, preserves execution order, and produces a clean JSON response with status, durations, and optional error details.
-
----
+Lightweight async health checks for .NET and Azure Functions with ordered results and clean JSON output.
 
 [![CI Build](https://github.com/kpol/HealthCheckr/actions/workflows/dotnetcore.yml/badge.svg)](https://github.com/kpol/HealthCheckr/actions/workflows/dotnetcore.yml)
 [![Nuget](https://img.shields.io/nuget/v/HealthCheckr.svg?logo=nuget)](https://www.nuget.org/packages/HealthCheckr)
