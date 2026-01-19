@@ -10,6 +10,8 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/kpol/HealthCheckr</RepositoryUrl>
     <PackageTags>health;health-check;.net</PackageTags>
+    <Title>HealthCheckr</Title>
+    <Authors>kiripol</Authors>
   </PropertyGroup>
 
   <ItemGroup>
