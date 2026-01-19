@@ -7,13 +7,12 @@ Lightweight async health checks for .NET and Azure Functions with ordered result
 
 ## Features
 
-* Async health checks with support for `CancellationToken`
-* Preserve registration order in JSON response
-* Optional duration tracking per check
-* Optional error reporting per check
-* Configurable HTTP status codes for Healthy, Degraded, and Unhealthy states
-* JSON output with enum status serialized as string
-* Compatible with .NET 8+ (future .NET 10 support)
+- Async + concurrent execution with cancellation support
+- Order-preserving results (useful for consistent logging and dashboards)
+- Configurable HTTP return codes and optional diagnostics
+- Attach arbitrary metadata at the global or per-check level (e.g. region, version, dependency info)
+- Works well in Azure Functions, serverless, worker services and web APIs
+- Minimal dependencies and easy to integrate
 
 ---
 
@@ -56,24 +55,35 @@ Console.WriteLine(result.ToJson());
 ### Example JSON Output
 
 ```json
+
 {
-  "status": "Degraded",
+  "status": "Unhealthy",
   "checks": [
     {
-      "name": "Database",
-      "description": "Checks database connectivity",
+      "name": "Check 1",
       "status": "Healthy",
-      "durationMs": 12
+      "durationMs": 3
     },
     {
-      "name": "Cache",
-      "description": "Checks Redis cache availability",
+      "name": "Check 2",
       "status": "Degraded",
-      "durationMs": 8
+      "durationMs": 1,
+      "metadata": {
+        "Metadata1": 123
+      }
+    },
+    {
+      "name": "Check 3",
+      "status": "Unhealthy",
+      "durationMs": 1
     }
   ],
-  "totalDurationMs": 20,
-  "timestamp": "2026-01-19T11:15:23.123Z"
+  "totalDurationMs": 21,
+  "timestamp": "2026-01-19T21:34:30.9969944+00:00",
+  "metadata": {
+    "Environment": "Production",
+    "Id": 42
+  }
 }
 ```
 

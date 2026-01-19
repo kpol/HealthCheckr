@@ -5,7 +5,7 @@ namespace HealthCheckr;
 
 public sealed class HealthChecker
 {
-    private readonly List<(string Name, string? Description, Func<CancellationToken, Task<HealthStatus>> Check)> _checks = [];
+    private readonly List<HealthCheckRegistration> _checks = [];
 
     public int HealthyHttpStatusCode { get; init; } = 200;
 
@@ -17,20 +17,27 @@ public sealed class HealthChecker
 
     public bool IncludeDuration { get; init; } = true;
 
-    public HealthChecker AddCheck(string name, Func<CancellationToken, Task<HealthStatus>> check, string? description = null)
+    public Dictionary<string, object?>? Metadata { get; init; } = [];
+
+    public HealthChecker AddCheck(string name, Func<CancellationToken, Task<HealthStatus>> check, string? description = null, Dictionary<string, object?>? metadata = null)
     {
-        _checks.Add((name, description, check));
+        _checks.Add(new(name, description, metadata?.Count > 0 ? new Dictionary<string, object?>(metadata) : null, check));
 
         return this;
     }
 
-    public HealthChecker AddCheck(string name, Func<Task<HealthStatus>> check, string? description = null) => AddCheck(name, _ => check(), description);
+    public HealthChecker AddCheck(string name, Func<Task<HealthStatus>> check, string? description = null, Dictionary<string, object?>? metadata = null) => AddCheck(name, _ => check(), description, metadata);
 
     public async Task<HealthResult> CheckAsync(CancellationToken cancellationToken = default)
     {
         var stopwatch = IncludeDuration ? Stopwatch.StartNew() : null;
 
         HealthResult healthResponse = new();
+
+        if (Metadata?.Count > 0)
+        {
+            healthResponse.Metadata = new Dictionary<string, object?>(Metadata);
+        }
 
         var tasks = _checks.Select(async (check, index) =>
         {
@@ -44,6 +51,8 @@ public sealed class HealthChecker
             {
                 healthCheckEntry.DurationMs = stopwatch!.ElapsedMilliseconds - start;
             }
+
+            healthCheckEntry.Metadata = check.Metadata;
 
             return (Index: index, HealthCheckEntry: healthCheckEntry);
         });
@@ -115,3 +124,9 @@ public sealed class HealthChecker
         _ => UnhealthyHttpStatusCode
     };
 }
+
+internal sealed record HealthCheckRegistration(
+    string Name,
+    string? Description,
+    Dictionary<string, object?>? Metadata,
+    Func<CancellationToken, Task<HealthStatus>> Check);

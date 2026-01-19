@@ -27,6 +27,9 @@ public sealed class HealthResult
     [JsonPropertyName("timestamp")]
     public DateTimeOffset Timestamp { get; } = DateTimeOffset.UtcNow;
 
+    [JsonPropertyName("metadata")]
+    public Dictionary<string, object?>? Metadata { get; internal set; }
+
     [JsonIgnore]
     public int HttpStatusCode { get; internal set; }
 

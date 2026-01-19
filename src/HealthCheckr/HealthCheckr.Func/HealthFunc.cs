@@ -19,7 +19,12 @@ public class HealthFunc
     {
         HealthChecker healthChecker = new()
         {
-            IncludeErrors = true
+            IncludeErrors = true,
+            Metadata = new Dictionary<string, object?>
+            {
+                ["Environment"] = "Production",
+                ["Id"] = 42
+            }
         };
 
         healthChecker.AddCheck("Check 1",
@@ -33,6 +38,10 @@ public class HealthFunc
             async () =>
             {
                 return await Task.FromResult(HealthStatus.Degraded);
+            },
+            metadata: new Dictionary<string, object?>
+            {
+                ["Metadata1"] = 123
             }
         );
 

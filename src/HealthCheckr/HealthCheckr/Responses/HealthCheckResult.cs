@@ -18,4 +18,7 @@ public sealed class HealthCheckResult
 
     [JsonPropertyName("durationMs")]
     public long? DurationMs { get; internal set; }
+
+    [JsonPropertyName("metadata")]
+    public Dictionary<string, object?>? Metadata { get; internal set; }
 }
