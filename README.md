@@ -5,6 +5,9 @@ Runs multiple health checks in parallel, preserves execution order, and produces
 
 ---
 
+[![CI Build](https://github.com/kpol/HealthCheckr/actions/workflows/dotnetcore.yml/badge.svg)](https://github.com/kpol/HealthCheckr/actions/workflows/dotnetcore.yml)
+[![Nuget](https://img.shields.io/nuget/v/HealthCheckr.svg?logo=nuget)](https://www.nuget.org/packages/HealthCheckr)
+
 ## Features
 
 * Async health checks with support for `CancellationToken`
