@@ -1,0 +1,45 @@
+name: Build, Test and Publish NuGet Package
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore ./src/HealthCheckr/HealthCheckr.slnx
+
+      - name: Build
+        run: dotnet build ./src/HealthCheckr/HealthCheckr.slnx --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test ./src/HealthCheckr/HealthCheckr.slnx --configuration Release --no-build
+
+      - name: Extract version from tag
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
+
+      - name: Pack
+        run: >
+          dotnet pack ./src/HealthCheckr/HealthCheckr/HealthCheckr.csproj
+          --configuration Release
+          --no-build
+          -p:PackageVersion=${{ env.VERSION }}
+          -o ./package
+
+      - name: Publish to NuGet
+        run: >
+          dotnet nuget push "./package/*.nupkg"
+          --api-key ${{ secrets.NUGET_API_KEY }}
+          --source https://api.nuget.org/v3/index.json
