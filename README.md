@@ -5,6 +5,9 @@ Runs multiple health checks in parallel, preserves execution order, and produces
 
 ---
 
+[![CI Build](https://github.com/kpol/HealthCheckr/actions/workflows/dotnetcore.yml/badge.svg)](https://github.com/kpol/HealthCheckr/actions/workflows/dotnetcore.yml)
+[![Nuget](https://img.shields.io/nuget/v/HealthCheckr.svg?logo=nuget)](https://www.nuget.org/packages/HealthCheckr)
+
 ## Features
 
 * Async health checks with support for `CancellationToken`
@@ -81,9 +84,9 @@ Console.WriteLine(result.ToJson());
 
 ## Configuration
 
-* `IncludeErrors` – Include exception details for failing checks.
-* `IncludeDuration` – Include execution duration per check.
-* `HealthyHttpStatusCode` / `DegradedHttpStatusCode` / `UnhealthyHttpStatusCode` – Customize HTTP response codes for overall status.
+* `IncludeErrors` &ndash; Include exception details for failing checks.
+* `IncludeDuration` &ndash; Include execution duration per check.
+* `HealthyHttpStatusCode` / `DegradedHttpStatusCode` / `UnhealthyHttpStatusCode` &ndash; Customize HTTP response codes for overall status.
 
 ---
 
@@ -95,4 +98,4 @@ Contributions are welcome. Please open an issue or pull request on GitHub.
 
 ## License
 
-© Kirill Polishchuk
+&copy; Kirill Polishchuk
