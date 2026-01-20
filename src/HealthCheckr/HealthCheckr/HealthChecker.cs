@@ -19,16 +19,29 @@ public sealed class HealthChecker
 
     public Dictionary<string, object?>? Metadata { get; init; } = [];
 
-    public HealthChecker AddCheck(string name, Func<CancellationToken, Task<HealthStatus>> check, string? description = null, Dictionary<string, object?>? metadata = null)
+    public HealthChecker AddCheck(string name, Func<CancellationToken, Task<HealthStatus>> check, string? description = null, Dictionary<string, object?>? metadata = null, IEnumerable<string>? tags = null)
     {
-        _checks.Add(new(name, description, metadata?.Count > 0 ? new Dictionary<string, object?>(metadata) : null, check));
+        var tagArray = tags?.ToArray();
+
+        _checks.Add(new(
+            name,
+            description,
+            metadata?.Count > 0 ? new Dictionary<string, object?>(metadata) : null,
+            tagArray?.Length > 0 ? tagArray : null,
+            check));
 
         return this;
     }
 
-    public HealthChecker AddCheck(string name, Func<Task<HealthStatus>> check, string? description = null, Dictionary<string, object?>? metadata = null) => AddCheck(name, _ => check(), description, metadata);
+    public HealthChecker AddCheck(
+        string name,
+        Func<Task<HealthStatus>> check,
+        string? description = null,
+        Dictionary<string, object?>? metadata = null,
+        IEnumerable<string>? tags = null)
+        => AddCheck(name, _ => check(), description, metadata, tags);
 
-    public async Task<HealthResult> CheckAsync(CancellationToken cancellationToken = default)
+    public async Task<HealthResult> CheckAsync(IEnumerable<string>? includeTags = null, IEnumerable<string>? excludeTags = null, CancellationToken cancellationToken = default)
     {
         var stopwatch = IncludeDuration ? Stopwatch.StartNew() : null;
 
@@ -39,23 +52,29 @@ public sealed class HealthChecker
             healthResponse.Metadata = new Dictionary<string, object?>(Metadata);
         }
 
-        var tasks = _checks.Select(async (check, index) =>
-        {
-            cancellationToken.ThrowIfCancellationRequested();
+        HashSet<string>? includeTagsSet = includeTags is not null && includeTags.Any() ? [.. includeTags] : null;
+        HashSet<string>? excludeTagsSet = excludeTags is not null && excludeTags.Any() ? [.. excludeTags] : null;
 
-            var start = IncludeDuration ? stopwatch!.ElapsedMilliseconds : 0;
-
-            var healthCheckEntry = await ExecuteCheckAsync(check.Name, check.Description, check.Check, cancellationToken);
-
-            if (IncludeDuration)
+        var tasks = _checks
+            .Where(c => ShouldRun(c.Tags, includeTagsSet, excludeTagsSet))
+            .Select(async (check, index) =>
             {
-                healthCheckEntry.DurationMs = stopwatch!.ElapsedMilliseconds - start;
-            }
+                cancellationToken.ThrowIfCancellationRequested();
 
-            healthCheckEntry.Metadata = check.Metadata;
+                var start = IncludeDuration ? stopwatch!.ElapsedMilliseconds : 0;
 
-            return (Index: index, HealthCheckEntry: healthCheckEntry);
-        });
+                var healthCheckEntry = await ExecuteCheckAsync(check.Name, check.Description, check.Check, cancellationToken);
+
+                if (IncludeDuration)
+                {
+                    healthCheckEntry.DurationMs = stopwatch!.ElapsedMilliseconds - start;
+                }
+
+                healthCheckEntry.Metadata = check.Metadata;
+                healthCheckEntry.Tags = check.Tags;
+
+                return (Index: index, HealthCheckEntry: healthCheckEntry);
+            });
 
         var result = await Task.WhenAll(tasks);
 
@@ -72,6 +91,29 @@ public sealed class HealthChecker
         healthResponse.HttpStatusCode = GetHttpStatusCode(healthResponse.Status);
 
         return healthResponse;
+    }
+
+    private static bool ShouldRun(
+        string[]? checkTags,
+        HashSet<string>? include,
+        HashSet<string>? exclude)
+    {
+        if (checkTags is null || checkTags.Length == 0)
+        {
+            return include is null && exclude is null;
+        }
+
+        if (exclude is not null && checkTags.Any(exclude.Contains))
+        {
+            return false;
+        }
+
+        if (include is not null)
+        {
+            return checkTags.Any(include.Contains);
+        }
+
+        return true;
     }
 
     private static HealthStatus GetOverallStatus(IEnumerable<HealthCheckResult> checks)
@@ -116,17 +158,19 @@ public sealed class HealthChecker
         return healthCheckEntry;
     }
 
-    private int GetHttpStatusCode(HealthStatus status) => status switch
-    {
-        HealthStatus.Healthy => HealthyHttpStatusCode,
-        HealthStatus.Degraded => DegradedHttpStatusCode,
-        HealthStatus.Unhealthy => UnhealthyHttpStatusCode,
-        _ => UnhealthyHttpStatusCode
-    };
-}
+    private int GetHttpStatusCode(HealthStatus status)
+        => status switch
+        {
+            HealthStatus.Healthy => HealthyHttpStatusCode,
+            HealthStatus.Degraded => DegradedHttpStatusCode,
+            HealthStatus.Unhealthy => UnhealthyHttpStatusCode,
+            _ => UnhealthyHttpStatusCode
+        };
 
-internal sealed record HealthCheckRegistration(
-    string Name,
-    string? Description,
-    Dictionary<string, object?>? Metadata,
-    Func<CancellationToken, Task<HealthStatus>> Check);
+    private sealed record HealthCheckRegistration(
+        string Name,
+        string? Description,
+        Dictionary<string, object?>? Metadata,
+        string[]? Tags,
+        Func<CancellationToken, Task<HealthStatus>> Check);
+}

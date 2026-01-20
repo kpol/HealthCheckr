@@ -21,4 +21,7 @@ public sealed class HealthCheckResult
 
     [JsonPropertyName("metadata")]
     public Dictionary<string, object?>? Metadata { get; internal set; }
+
+    [JsonPropertyName("tags")]
+    public string[]? Tags { get; internal set; }
 }

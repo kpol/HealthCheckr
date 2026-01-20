@@ -42,17 +42,19 @@ public class HealthFunc
             metadata: new Dictionary<string, object?>
             {
                 ["Metadata1"] = 123
-            }
+            },
+            tags: ["external"]
         );
 
         healthChecker.AddCheck("Check 3",
             async () =>
             {
                 return await Task.FromResult(HealthStatus.Unhealthy);
-            }
+            },
+            tags: ["external", "critical"]
         );
 
-        var result = await healthChecker.CheckAsync();
+        var result = await healthChecker.CheckAsync(includeTags: ["external"], excludeTags: null);
 
         return new ContentResult
         {
