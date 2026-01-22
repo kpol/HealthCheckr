@@ -88,7 +88,8 @@ Console.WriteLine(result.ToJson());
 
 // Simple sequential check returning only HealthStatus
 var simpleStatus = await healthChecker.CheckSimpleAsync(
-    includeTags: ["external"]
+    includeTags: ["external"],
+    excludeTags: null
 );
 
 Console.WriteLine(simpleStatus);
