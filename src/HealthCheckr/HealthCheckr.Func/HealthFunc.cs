@@ -20,7 +20,7 @@ public class HealthFunc
         HealthChecker healthChecker = new()
         {
             IncludeErrors = true,
-            Metadata = new Dictionary<string, object?>
+            Data = new Dictionary<string, object?>
             {
                 ["Environment"] = "Production",
                 ["Id"] = 42
@@ -30,18 +30,18 @@ public class HealthFunc
         healthChecker.AddCheck("Check 1",
             async () =>
             {
-                return await Task.FromResult(HealthStatus.Healthy);
+                return await Task.FromResult(new HealthCheckResult() { Status = HealthStatus.Healthy });
             }
         );
 
         healthChecker.AddCheck("Check 2",
             async () =>
             {
-                return await Task.FromResult(HealthStatus.Degraded);
-            },
-            metadata: new Dictionary<string, object?>
-            {
-                ["Metadata1"] = 123
+                return await Task.FromResult(new HealthCheckResult()
+                {
+                    Status = HealthStatus.Degraded,
+                    Description = "Response is slow"
+                });
             },
             tags: ["external"]
         );
@@ -49,12 +49,21 @@ public class HealthFunc
         healthChecker.AddCheck("Check 3",
             async () =>
             {
-                return await Task.FromResult(HealthStatus.Unhealthy);
+                return await Task.FromResult(new HealthCheckResult()
+                {
+                    Status = HealthStatus.Unhealthy,
+                    Exception = new Exception("Database not reachable"),
+                    Data = new Dictionary<string, object?>
+                    {
+                        ["Timeout"] = "30s"
+                    }
+                });
             },
             tags: ["external", "critical"]
         );
 
         var result = await healthChecker.CheckAsync(includeTags: ["external"], excludeTags: null);
+        //var result = await healthChecker.CheckAsync("Check 4");
 
         return new ContentResult
         {

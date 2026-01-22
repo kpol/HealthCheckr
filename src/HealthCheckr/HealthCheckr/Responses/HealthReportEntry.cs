@@ -2,13 +2,15 @@
 
 namespace HealthCheckr.Responses;
 
-public sealed class HealthCheckResult
+public struct HealthReportEntry
 {
+    public HealthReportEntry() { }
+
     [JsonPropertyName("name")]
     public required string Name { get; init; }
 
     [JsonPropertyName("description")]
-    public string? Description { get; init; }
+    public string? Description { get; internal set; }
 
     [JsonPropertyName("status")]
     public HealthStatus Status { get; internal set; }
@@ -19,8 +21,8 @@ public sealed class HealthCheckResult
     [JsonPropertyName("durationMs")]
     public long? DurationMs { get; internal set; }
 
-    [JsonPropertyName("metadata")]
-    public Dictionary<string, object?>? Metadata { get; internal set; }
+    [JsonPropertyName("data")]
+    public IReadOnlyDictionary<string, object?>? Data { get; internal set; }
 
     [JsonPropertyName("tags")]
     public string[]? Tags { get; internal set; }

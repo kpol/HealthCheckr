@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
 	<TargetFramework>net8.0</TargetFramework>
@@ -9,7 +9,7 @@
     <PackageProjectUrl>https://github.com/kpol/HealthCheckr</PackageProjectUrl>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/kpol/HealthCheckr</RepositoryUrl>
-    <PackageTags>health;health-check;.net</PackageTags>
+    <PackageTags>.net;health;health-check;azure;azure-func;function;functions</PackageTags>
     <Title>HealthCheckr</Title>
     <Authors>Kirill Polishchuk</Authors>
   </PropertyGroup>
