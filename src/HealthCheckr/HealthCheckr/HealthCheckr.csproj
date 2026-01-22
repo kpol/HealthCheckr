@@ -1,20 +1,28 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
 	<TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <Copyright>Kirill Polishchuk</Copyright>
-    <Description>A lightweight health check library for .NET and Azure Functions that runs async checks in parallel, preserves execution order and returns a clean JSON response with status, durations and optional error details.</Description>
+    <Description>A lightweight health check library for .NET and Azure Functions that runs asynchronous checks in parallel, preserves execution order and returns a clean JSON response with status, durations and optional error details.
+The library is framework-agnostic and has no dependency on ASP.NET, making it suitable for console apps, background services, Azure Functions and any .NET runtime.</Description>
     <PackageProjectUrl>https://github.com/kpol/HealthCheckr</PackageProjectUrl>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/kpol/HealthCheckr</RepositoryUrl>
-    <PackageTags>health;health-check;.net</PackageTags>
+    <PackageTags>.net;health;health-check;azure;azure-func;function;functions;monitoring;monitoring;serverless;webapi;worker-service</PackageTags>
     <Title>HealthCheckr</Title>
     <Authors>Kirill Polishchuk</Authors>
+	<GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageIcon>icon.png</PackageIcon>
   </PropertyGroup>
 
   <ItemGroup>
+    <None Include="..\..\..\img\icon.png">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
     <None Include="..\..\..\README.md">
       <Pack>True</Pack>
       <PackagePath>\</PackagePath>

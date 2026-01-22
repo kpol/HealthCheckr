@@ -19,31 +19,56 @@ public class HealthFunc
     {
         HealthChecker healthChecker = new()
         {
-            IncludeErrors = true
+            IncludeErrors = true,
+            Data = new Dictionary<string, object?>
+            {
+                ["Environment"] = "Production",
+                ["Id"] = 42
+            }
         };
 
+        // Add checks
         healthChecker.AddCheck("Check 1",
             async () =>
             {
-                return await Task.FromResult(HealthStatus.Healthy);
+                return await Task.FromResult(new HealthCheckResult { Status = HealthStatus.Healthy });
             }
         );
 
         healthChecker.AddCheck("Check 2",
             async () =>
             {
-                return await Task.FromResult(HealthStatus.Degraded);
-            }
+                return await Task.FromResult(new HealthCheckResult
+                {
+                    Status = HealthStatus.Degraded,
+                    Data = new Dictionary<string, object?> { ["Metadata1"] = 123 }
+                });
+            },
+            tags: ["external"]
         );
 
         healthChecker.AddCheck("Check 3",
             async () =>
             {
-                return await Task.FromResult(HealthStatus.Unhealthy);
-            }
+                return await Task.FromResult(new HealthCheckResult { Status = HealthStatus.Unhealthy });
+            },
+            tags: ["external", "critical"]
         );
 
-        var result = await healthChecker.CheckAsync();
+        // Full JSON health report
+        var result = await healthChecker.CheckAsync(
+            includeTags: ["external"]
+        );
+
+
+
+        // Simple sequential check returning only HealthStatus
+        var simpleStatus = await healthChecker.CheckSimpleAsync(
+            includeTags: ["external"],
+            excludeTags: null
+        );
+
+        Console.WriteLine(simpleStatus);
 
         return new ContentResult
         {
