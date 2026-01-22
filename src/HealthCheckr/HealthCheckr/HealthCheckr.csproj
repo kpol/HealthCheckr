@@ -9,9 +9,10 @@
     <PackageProjectUrl>https://github.com/kpol/HealthCheckr</PackageProjectUrl>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/kpol/HealthCheckr</RepositoryUrl>
-    <PackageTags>.net;health;health-check;azure;azure-func;function;functions</PackageTags>
+    <PackageTags>.net;health;health-check;azure;azure-func;function;functions;monitoring;monitoring;serverless;webapi;worker-service</PackageTags>
     <Title>HealthCheckr</Title>
     <Authors>Kirill Polishchuk</Authors>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
   </PropertyGroup>
 
   <ItemGroup>
