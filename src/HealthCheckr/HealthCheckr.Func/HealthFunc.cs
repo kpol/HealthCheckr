@@ -27,20 +27,21 @@ public class HealthFunc
             }
         };
 
+        // Add checks
         healthChecker.AddCheck("Check 1",
             async () =>
             {
-                return await Task.FromResult(new HealthCheckResult() { Status = HealthStatus.Healthy });
+                return await Task.FromResult(new HealthCheckResult { Status = HealthStatus.Healthy });
             }
         );
 
         healthChecker.AddCheck("Check 2",
             async () =>
             {
-                return await Task.FromResult(new HealthCheckResult()
+                return await Task.FromResult(new HealthCheckResult
                 {
                     Status = HealthStatus.Degraded,
-                    Description = "Response is slow"
+                    Data = new Dictionary<string, object?> { ["Metadata1"] = 123 }
                 });
             },
             tags: ["external"]
@@ -49,21 +50,24 @@ public class HealthFunc
         healthChecker.AddCheck("Check 3",
             async () =>
             {
-                return await Task.FromResult(new HealthCheckResult()
-                {
-                    Status = HealthStatus.Unhealthy,
-                    Exception = new Exception("Database not reachable"),
-                    Data = new Dictionary<string, object?>
-                    {
-                        ["Timeout"] = "30s"
-                    }
-                });
+                return await Task.FromResult(new HealthCheckResult { Status = HealthStatus.Unhealthy });
             },
             tags: ["external", "critical"]
         );
 
-        var result = await healthChecker.CheckAsync(includeTags: ["external"], excludeTags: null);
-        //var result = await healthChecker.CheckAsync("Check 4");
+        // Full JSON health report
+        var result = await healthChecker.CheckAsync(
+            includeTags: ["external"]
+        );
+
+        
+
+        // Simple sequential check returning only HealthStatus
+        var simpleStatus = await healthChecker.CheckSimpleAsync(
+            includeTags: ["external"]
+        );
+
+        Console.WriteLine(simpleStatus);
 
         return new ContentResult
         {

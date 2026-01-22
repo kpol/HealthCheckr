@@ -14,6 +14,7 @@ Lightweight async health checks for .NET and Azure Functions with ordered result
 - Tag-based filtering with include and exclude semantics
 - Works well in Azure Functions, serverless, worker services and web APIs
 - Minimal dependencies and easy to integrate
+- Optional “simple” sequential check returning only HealthStatus without JSON
 
 ---
 
@@ -41,28 +42,29 @@ using HealthCheckr;
 HealthChecker healthChecker = new()
 {
     IncludeErrors = true,
-    Metadata = new Dictionary<string, object?>
+    Data = new Dictionary<string, object?>
     {
         ["Environment"] = "Production",
         ["Id"] = 42
     }
 };
 
+// Add checks
 healthChecker.AddCheck("Check 1",
     async () =>
     {
-        return await Task.FromResult(HealthStatus.Healthy);
+        return await Task.FromResult(new HealthCheckResult { Status = HealthStatus.Healthy });
     }
 );
 
 healthChecker.AddCheck("Check 2",
     async () =>
     {
-        return await Task.FromResult(HealthStatus.Degraded);
-    },
-    metadata: new Dictionary<string, object?>
-    {
-        ["Metadata1"] = 123
+        return await Task.FromResult(new HealthCheckResult
+        {
+            Status = HealthStatus.Degraded,
+            Data = new Dictionary<string, object?> { ["Metadata1"] = 123 }
+        });
     },
     tags: ["external"]
 );
@@ -70,17 +72,24 @@ healthChecker.AddCheck("Check 2",
 healthChecker.AddCheck("Check 3",
     async () =>
     {
-        return await Task.FromResult(HealthStatus.Unhealthy);
+        return await Task.FromResult(new HealthCheckResult { Status = HealthStatus.Unhealthy });
     },
     tags: ["external", "critical"]
 );
 
+// Full JSON health report
 var result = await healthChecker.CheckAsync(
-    includeTags: ["external"],
-    excludeTags: null
+    includeTags: ["external"]
 );
 
 Console.WriteLine(result.ToJson());
+
+// Simple sequential check returning only HealthStatus
+var simpleStatus = await healthChecker.CheckSimpleAsync(
+    includeTags: ["external"]
+);
+
+Console.WriteLine(simpleStatus);
 ```
 
 ---
@@ -105,14 +114,15 @@ HealthCheckr supports include and exclude tag filters to control which checks ru
 ## Example JSON Output
 
 ```json
+
 {
   "status": "Unhealthy",
   "checks": [
     {
       "name": "Check 2",
       "status": "Degraded",
-      "durationMs": 3,
-      "metadata": {
+      "durationMs": 2,
+      "data": {
         "Metadata1": 123
       },
       "tags": [
@@ -129,9 +139,9 @@ HealthCheckr supports include and exclude tag filters to control which checks ru
       ]
     }
   ],
-  "totalDurationMs": 19,
-  "timestamp": "2026-01-20T03:24:09.06152+00:00",
-  "metadata": {
+  "totalDurationMs": 11,
+  "timestamp": "2026-01-22T02:08:25.2082994+00:00",
+  "data": {
     "Environment": "Production",
     "Id": 42
   }
