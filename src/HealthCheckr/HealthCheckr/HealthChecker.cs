@@ -57,11 +57,16 @@ public sealed class HealthChecker
     /// <param name="check">Delegate that executes the check.</param>
     /// <param name="tags">Optional tags used for filtering.</param>
     /// <returns>The current <see cref="HealthChecker"/> instance.</returns>
+    /// <exception cref="ArgumentException">Thrown if <paramref name="name"/> is null or empty.</exception>
+    /// <exception cref="ArgumentNullException">Thrown if <paramref name="check"/> is null.</exception>
     public HealthChecker AddCheck(
         string name,
         Func<CancellationToken, Task<HealthCheckResult>> check,
         IEnumerable<string>? tags = null)
     {
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        ArgumentNullException.ThrowIfNull(check);
+
         var tagArray = tags?.ToArray();
 
         _checks.Add(new(
@@ -75,11 +80,22 @@ public sealed class HealthChecker
     /// <summary>
     /// Registers a health check without a cancellation token.
     /// </summary>
+    /// <param name="name">Logical name of the health check.</param>
+    /// <param name="check">Delegate that executes the check.</param>
+    /// <param name="tags">Optional tags used for filtering.</param>
+    /// <returns>The current <see cref="HealthChecker"/> instance.</returns>
+    /// <exception cref="ArgumentException">Thrown if <paramref name="name"/> is null or empty.</exception>
+    /// <exception cref="ArgumentNullException">Thrown if <paramref name="check"/> is null.</exception>
     public HealthChecker AddCheck(
         string name,
         Func<Task<HealthCheckResult>> check,
         IEnumerable<string>? tags = null)
-        => AddCheck(name, _ => check(), tags);
+    {
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        ArgumentNullException.ThrowIfNull(check);
+
+        return AddCheck(name, _ => check(), tags);
+    }
 
     /// <summary>
     /// Executes all matching health checks in parallel and returns a detailed report.
@@ -87,6 +103,7 @@ public sealed class HealthChecker
     /// <param name="includeTags">Tags that must be present for a check to run.</param>
     /// <param name="excludeTags">Tags that prevent a check from running.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A <see cref="Task{HealthReport}"/> representing the asynchronous operation.</returns>
     public async Task<HealthReport> CheckAsync(
         IEnumerable<string>? includeTags = null,
         IEnumerable<string>? excludeTags = null,
@@ -97,12 +114,19 @@ public sealed class HealthChecker
     }
 
     /// <summary>
-    /// Executes a single named health check and returns a detailed report.
+    /// Executes a single named health check and returns a detailed <see cref="HealthReport"/>.
     /// </summary>
+    /// <param name="checkName">The name of the health check to execute.</param>
+    /// <param name="cancellationToken">A <see cref="CancellationToken"/> to cancel the operation.</param>
+    /// <returns>A <see cref="Task{HealthReport}"/> representing the asynchronous operation. 
+    /// The task result contains the detailed health report for the specified check.</returns>
+    /// <exception cref="ArgumentException">Thrown if <paramref name="checkName"/> is null or empty.</exception>
     public async Task<HealthReport> CheckAsync(
         string checkName,
         CancellationToken cancellationToken = default)
     {
+        ArgumentException.ThrowIfNullOrEmpty(checkName);
+
         var filteredChecks = _checks.Where(c => c.Name == checkName);
         return await CheckInternalAsync(filteredChecks, cancellationToken);
     }
@@ -113,6 +137,10 @@ public sealed class HealthChecker
     /// <remarks>
     /// Execution stops immediately if a check returns <see cref="HealthStatus.Unhealthy"/>.
     /// </remarks>
+    /// <param name="includeTags">Tags that must be present for a check to run.</param>
+    /// <param name="excludeTags">Tags that prevent a check from running.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The overall <see cref="HealthStatus"/> of the executed checks.</returns>
     public async Task<HealthStatus> CheckSimpleAsync(
         IEnumerable<string>? includeTags = null,
         IEnumerable<string>? excludeTags = null,
@@ -125,10 +153,16 @@ public sealed class HealthChecker
     /// <summary>
     /// Executes a single named health check sequentially and returns the overall status.
     /// </summary>
+    /// <param name="checkName">The name of the health check to execute.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The overall <see cref="HealthStatus"/> of the specified check.</returns>
+    /// <exception cref="ArgumentException">Thrown if <paramref name="checkName"/> is null or empty.</exception>
     public async Task<HealthStatus> CheckSimpleAsync(
         string checkName,
         CancellationToken cancellationToken = default)
     {
+        ArgumentException.ThrowIfNullOrEmpty(checkName);
+
         var checks = _checks.Where(c => c.Name == checkName);
         return await CheckSimpleAsync(checks, cancellationToken);
     }
@@ -320,7 +354,8 @@ public sealed class HealthChecker
         if (IncludeDuration)
             entry.DurationMs = stopwatch!.ElapsedMilliseconds - start;
 
-        entry.Tags = check.Tags;
+        if (check.Tags?.Length > 0)
+            entry.Tags = check.Tags;
 
         return entry;
     }
