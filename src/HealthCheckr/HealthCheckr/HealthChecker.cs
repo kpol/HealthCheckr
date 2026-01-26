@@ -13,7 +13,7 @@ namespace HealthCheckr;
 /// </remarks>
 public sealed class HealthChecker
 {
-    private readonly List<HealthCheckRegistration> _checks = [];
+    private readonly Dictionary<string, HealthCheckRegistration> _checks = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// HTTP status code returned when the overall health status is <see cref="HealthStatus.Healthy"/>.
@@ -53,7 +53,7 @@ public sealed class HealthChecker
     /// <summary>
     /// Registers a health check with an asynchronous execution delegate.
     /// </summary>
-    /// <param name="name">Logical name of the health check.</param>
+    /// <param name="name">A unique name used to identify the health check.</param>
     /// <param name="check">Delegate that executes the check.</param>
     /// <param name="tags">Optional tags used for filtering.</param>
     /// <param name="timeout">
@@ -75,9 +75,13 @@ public sealed class HealthChecker
         ArgumentException.ThrowIfNullOrEmpty(name);
         ArgumentNullException.ThrowIfNull(check);
 
+        if (_checks.ContainsKey(name))
+            throw new ArgumentException($"A health check with name '{name}' is already registered.", nameof(name));
+
         var tagArray = tags?.ToArray();
 
-        _checks.Add(new(
+        _checks.Add(name, new(
+            _checks.Count,
             name,
             tagArray?.Length > 0 ? tagArray : null,
             new LambdaHealthCheck(check),
@@ -93,7 +97,7 @@ public sealed class HealthChecker
     /// This overload does not support cooperative cancellation.
     /// Use the CancellationToken overload to enable timeouts.
     /// </remarks>
-    /// <param name="name">Logical name of the health check.</param>
+    /// <param name="name">A unique name used to identify the health check.</param>
     /// <param name="check">Delegate that executes the check.</param>
     /// <param name="tags">Optional tags used for filtering.</param>
     /// <returns>The current <see cref="HealthChecker"/> instance.</returns>
@@ -107,7 +111,40 @@ public sealed class HealthChecker
         ArgumentException.ThrowIfNullOrEmpty(name);
         ArgumentNullException.ThrowIfNull(check);
 
+        if (_checks.ContainsKey(name))
+            throw new ArgumentException($"A health check with name '{name}' is already registered.", nameof(name));
+
         return AddCheck(name, _ => check(), tags, null);
+    }
+
+    /// <summary>
+    /// Registers a health check with the specified name.
+    /// </summary>
+    /// <param name="name">A unique name used to identify the health check.</param>
+    /// <param name="check">The health check implementation to execute.</param>
+    /// <param name="tags">Optional tags used for filtering.</param>
+    /// <param name="timeout">Optional timeout that limits how long the health check is allowed to run.</param>
+    /// <returns>The current <see cref="HealthChecker"/> instance.</returns>
+    /// <exception cref="ArgumentException">Thrown if <paramref name="name"/> is null or empty.</exception>
+    /// <exception cref="ArgumentNullException">Thrown if <paramref name="check"/> is null.</exception>
+    public HealthChecker AddCheck(string name, IHealthCheck check, IEnumerable<string>? tags = null, TimeSpan? timeout = null)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        ArgumentNullException.ThrowIfNull(check);
+
+        if (_checks.ContainsKey(name))
+            throw new ArgumentException($"A health check with name '{name}' is already registered.", nameof(name));
+
+        var tagArray = tags?.ToArray();
+
+        _checks.Add(name, new(
+            _checks.Count,
+            name,
+            tagArray?.Length > 0 ? tagArray : null,
+            check,
+            timeout));
+
+        return this;
     }
 
     /// <summary>
@@ -140,8 +177,11 @@ public sealed class HealthChecker
     {
         ArgumentException.ThrowIfNullOrEmpty(checkName);
 
-        var filteredChecks = _checks.Where(c => c.Name == checkName);
-        return await CheckInternalAsync(filteredChecks, cancellationToken);
+        IEnumerable<HealthCheckRegistration> checks = _checks.TryGetValue(checkName, out var registration)
+            ? [registration]
+            : [];
+
+        return await CheckInternalAsync(checks, cancellationToken);
     }
 
     /// <summary>
@@ -159,8 +199,8 @@ public sealed class HealthChecker
         IEnumerable<string>? excludeTags = null,
         CancellationToken cancellationToken = default)
     {
-        var checks = FilterChecks(includeTags, excludeTags);
-        return await CheckSimpleAsync(checks, cancellationToken);
+        var checks = FilterChecks(includeTags, excludeTags).OrderBy(c => c.Index);
+        return await CheckSimpleAsync([.. checks], cancellationToken);
     }
 
     /// <summary>
@@ -176,7 +216,10 @@ public sealed class HealthChecker
     {
         ArgumentException.ThrowIfNullOrEmpty(checkName);
 
-        var checks = _checks.Where(c => c.Name == checkName);
+        IEnumerable<HealthCheckRegistration> checks = _checks.TryGetValue(checkName, out var registration)
+            ? [registration]
+            : [];
+
         return await CheckSimpleAsync(checks, cancellationToken);
     }
 
@@ -218,7 +261,7 @@ public sealed class HealthChecker
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            CancellationTokenSource? timeoutCts = null;
+            CancellationTokenSource? timeoutCancellationTokenSource = null;
 
             try
             {
@@ -226,9 +269,9 @@ public sealed class HealthChecker
 
                 if (check.Timeout is not null)
                 {
-                    timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                    timeoutCts.CancelAfter(check.Timeout.Value);
-                    effectiveToken = timeoutCts.Token;
+                    timeoutCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                    timeoutCancellationTokenSource.CancelAfter(check.Timeout.Value);
+                    effectiveToken = timeoutCancellationTokenSource.Token;
                 }
 
                 var result = await check.Check.CheckHealthAsync(effectiveToken);
@@ -239,7 +282,7 @@ public sealed class HealthChecker
                 if (result.Status == HealthStatus.Degraded)
                     overall = HealthStatus.Degraded;
             }
-            catch (OperationCanceledException) when (timeoutCts?.IsCancellationRequested == true)
+            catch (OperationCanceledException) when (timeoutCancellationTokenSource?.IsCancellationRequested == true)
             {
                 return HealthStatus.Unhealthy;
             }
@@ -253,7 +296,7 @@ public sealed class HealthChecker
             }
             finally
             {
-                timeoutCts?.Dispose();
+                timeoutCancellationTokenSource?.Dispose();
             }
         }
 
@@ -294,7 +337,7 @@ public sealed class HealthChecker
             ? [.. excludeTags]
             : null;
 
-        return _checks.Where(c => ShouldRun(c.Tags, include, exclude));
+        return _checks.Values.Where(c => ShouldRun(c.Tags, include, exclude));
     }
 
     /// <summary>
@@ -311,26 +354,26 @@ public sealed class HealthChecker
 
         var stopwatch = IncludeDuration ? Stopwatch.StartNew() : null;
 
-        HealthReport healthResponse = new();
+        HealthReport healthReport = new();
 
         if (Data?.Count > 0)
-            healthResponse.Data = new Dictionary<string, object?>(Data);
+            healthReport.Data = new Dictionary<string, object?>(Data);
 
         var result = await ExecuteChecksAsync(checks, stopwatch, cancellationToken);
 
-        healthResponse.Checks = [.. result
+        healthReport.Checks = [.. result
             .OrderBy(r => r.Index)
             .Select(r => r.HealthCheckEntry)];
 
         stopwatch?.Stop();
 
         if (IncludeDuration)
-            healthResponse.TotalDurationMs = stopwatch!.ElapsedMilliseconds;
+            healthReport.TotalDurationMs = stopwatch!.ElapsedMilliseconds;
 
-        healthResponse.Status = GetOverallStatus(healthResponse.Checks.Select(c => c.Status));
-        healthResponse.HttpStatusCode = GetHttpStatusCode(healthResponse.Status);
+        healthReport.Status = GetOverallStatus(healthReport.Checks.Select(c => c.Status));
+        healthReport.HttpStatusCode = GetHttpStatusCode(healthReport.Status);
 
-        return healthResponse;
+        return healthReport;
     }
 
     /// <summary>
@@ -341,8 +384,8 @@ public sealed class HealthChecker
         Stopwatch? stopwatch,
         CancellationToken cancellationToken)
     {
-        var tasks = checks.Select(async (check, index) =>
-            (Index: index, HealthCheckEntry: await ExecuteSingleCheckAsync(check, stopwatch, cancellationToken)));
+        var tasks = checks.Select(async check =>
+            (check.Index, HealthCheckEntry: await ExecuteSingleCheckAsync(check, stopwatch, cancellationToken)));
 
         return await Task.WhenAll(tasks);
     }
@@ -377,22 +420,16 @@ public sealed class HealthChecker
 
             entry.Status = result.Status;
             entry.Description = result.Description;
-
-            if (IncludeErrors)
-                entry.Error = IncludeStackTrace
-                    ? result.Exception?.ToString()
-                    : result.Exception?.Message;
+            SetErrorIfRequired(ref entry, exception: result.Exception);
 
             if (result.Data?.Count > 0)
                 entry.Data = new Dictionary<string, object?>(result.Data);
         }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (timeoutCancellationTokenSource?.IsCancellationRequested == true)
         {
             entry.Status = HealthStatus.Unhealthy;
-            entry.Description = $"Health check timed out after {check.Timeout}";
-
-            if (IncludeErrors)
-                entry.Error = "Timeout exceeded";
+            entry.Description = $"Health check timed out after {check.Timeout?.TotalMilliseconds} ms";
+            SetErrorIfRequired(ref entry, errorMessage: "Timeout exceeded");
         }
         catch (OperationCanceledException)
         {
@@ -401,9 +438,7 @@ public sealed class HealthChecker
         catch (Exception ex)
         {
             entry.Status = HealthStatus.Unhealthy;
-
-            if (IncludeErrors)
-                entry.Error = IncludeStackTrace ? ex.ToString() : ex.Message;
+            SetErrorIfRequired(ref entry, exception: ex);
         }
         finally
         {
@@ -430,10 +465,26 @@ public sealed class HealthChecker
             _ => UnhealthyHttpStatusCode
         };
 
+    private void SetErrorIfRequired(ref HealthReportEntry entry, string? errorMessage = null, Exception? exception = null)
+    {
+        if (IncludeErrors)
+        {
+            if (errorMessage is not null)
+            {
+                entry.Error = errorMessage;
+            }
+            else if (exception is not null)
+            {
+                entry.Error = IncludeStackTrace ? exception.ToString() : exception.Message;
+            }
+        }
+    }
+
     /// <summary>
     /// Internal registration record for a health check.
     /// </summary>
     private sealed record HealthCheckRegistration(
+        int Index,
         string Name,
         string[]? Tags,
         IHealthCheck Check,

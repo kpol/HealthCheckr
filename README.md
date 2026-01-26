@@ -14,6 +14,7 @@ The library is framework-agnostic and has no dependency on ASP.NET, making it su
 - Configurable HTTP return codes and optional diagnostics
 - Attach arbitrary metadata at the global or per-check level (for example region, version, dependency info)
 - Tag-based filtering with include and exclude semantics
+- Per-check timeout support via cooperative cancellation
 - Works well in Azure Functions, serverless, worker services and web APIs
 - Minimal dependencies and easy to integrate
 - Optional “simple” sequential check returning only HealthStatus without JSON
@@ -44,55 +45,52 @@ using HealthCheckr;
 HealthChecker healthChecker = new()
 {
     IncludeErrors = true,
-    Data = new Dictionary<string, object?>
+    Data = new()
     {
         ["Environment"] = "Production",
         ["Id"] = 42
     }
 };
 
-// Add checks
 healthChecker.AddCheck("Check 1",
-    async () =>
-    {
-        return await Task.FromResult(new HealthCheckResult { Status = HealthStatus.Healthy });
-    }
+    static () => Task.FromResult(new HealthCheckResult { Status = HealthStatus.Healthy })
 );
 
 healthChecker.AddCheck("Check 2",
-    async () =>
+    static async ct =>
     {
+        await Task.Delay(2000, ct);
         return await Task.FromResult(new HealthCheckResult
         {
             Status = HealthStatus.Degraded,
             Data = new Dictionary<string, object?> { ["Metadata1"] = 123 }
         });
     },
-    tags: ["external"]
+    tags: ["external"],
+    timeout: TimeSpan.FromMilliseconds(50)
 );
 
 healthChecker.AddCheck("Check 3",
-    async () =>
-    {
-        return await Task.FromResult(new HealthCheckResult { Status = HealthStatus.Unhealthy });
-    },
+    new CustomHealthCheck(),
     tags: ["external", "critical"]
 );
 
 // Full JSON health report
-var result = await healthChecker.CheckAsync(
-    includeTags: ["external"]
-);
-
-Console.WriteLine(result.ToJson());
+var result = await healthChecker.CheckAsync(includeTags: ["external"]);
 
 // Simple sequential check returning only HealthStatus
 var simpleStatus = await healthChecker.CheckSimpleAsync(
-    includeTags: ["external"],
-    excludeTags: null
-);
+    includeTags: ["external"], 
+    excludeTags: null);
 
 Console.WriteLine(simpleStatus);
+
+return new ContentResult
+{
+    Content = result.ToJson(),
+    ContentType = "application/json",
+    StatusCode = result.HttpStatusCode
+};
 ```
 
 ---
@@ -118,23 +116,24 @@ HealthCheckr supports include and exclude tag filters to control which checks ru
 
 ```json
 
+
 {
   "status": "Unhealthy",
   "checks": [
     {
       "name": "Check 2",
-      "status": "Degraded",
-      "durationMs": 2,
-      "data": {
-        "Metadata1": 123
-      },
+      "description": "Health check timed out after 50 ms",
+      "status": "Unhealthy",
+      "error": "Timeout exceeded",
+      "durationMs": 55,
       "tags": [
         "external"
       ]
     },
     {
       "name": "Check 3",
-      "status": "Unhealthy",
+      "description": "Custom health check passed.",
+      "status": "Healthy",
       "durationMs": 1,
       "tags": [
         "external",
@@ -142,8 +141,8 @@ HealthCheckr supports include and exclude tag filters to control which checks ru
       ]
     }
   ],
-  "totalDurationMs": 11,
-  "timestamp": "2026-01-22T02:08:25.2082994+00:00",
+  "totalDurationMs": 71,
+  "timestamp": "2026-01-26T22:17:29.6146647+00:00",
   "data": {
     "Environment": "Production",
     "Id": 42

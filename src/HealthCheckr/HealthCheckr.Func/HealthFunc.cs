@@ -27,16 +27,12 @@ public class HealthFunc
             }
         };
 
-        // Add checks
         healthChecker.AddCheck("Check 1",
-            async () =>
-            {
-                return await Task.FromResult(new HealthCheckResult { Status = HealthStatus.Healthy });
-            }
+            static () => Task.FromResult(new HealthCheckResult { Status = HealthStatus.Healthy })
         );
 
         healthChecker.AddCheck("Check 2",
-            async ct =>
+            static async ct =>
             {
                 await Task.Delay(2000, ct);
                 return await Task.FromResult(new HealthCheckResult
@@ -50,25 +46,17 @@ public class HealthFunc
         );
 
         healthChecker.AddCheck("Check 3",
-            async () =>
-            {
-                return await Task.FromResult(new HealthCheckResult { Status = HealthStatus.Unhealthy });
-            },
+            new CustomHealthCheck(),
             tags: ["external", "critical"]
         );
 
         // Full JSON health report
-        var result = await healthChecker.CheckAsync(
-            includeTags: ["external"]
-        );
-
-
+        var result = await healthChecker.CheckAsync(includeTags: ["external"]);
 
         // Simple sequential check returning only HealthStatus
         var simpleStatus = await healthChecker.CheckSimpleAsync(
-            includeTags: ["external"],
-            excludeTags: null
-        );
+            includeTags: ["external"], 
+            excludeTags: null);
 
         Console.WriteLine(simpleStatus);
 
@@ -78,5 +66,17 @@ public class HealthFunc
             ContentType = "application/json",
             StatusCode = result.HttpStatusCode
         };
+    }
+}
+
+public sealed class CustomHealthCheck : IHealthCheck
+{
+    public Task<HealthCheckResult> CheckHealthAsync(CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(new HealthCheckResult
+        {
+            Status = HealthStatus.Healthy,
+            Description = "Custom health check passed."
+        });
     }
 }
