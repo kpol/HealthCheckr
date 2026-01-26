@@ -20,7 +20,7 @@ public class HealthFunc
         HealthChecker healthChecker = new()
         {
             IncludeErrors = true,
-            Data = new Dictionary<string, object?>
+            Data = new()
             {
                 ["Environment"] = "Production",
                 ["Id"] = 42
@@ -36,15 +36,17 @@ public class HealthFunc
         );
 
         healthChecker.AddCheck("Check 2",
-            async () =>
+            async ct =>
             {
+                await Task.Delay(2000, ct);
                 return await Task.FromResult(new HealthCheckResult
                 {
                     Status = HealthStatus.Degraded,
                     Data = new Dictionary<string, object?> { ["Metadata1"] = 123 }
                 });
             },
-            tags: ["external"]
+            tags: ["external"],
+            timeout: TimeSpan.FromMilliseconds(50)
         );
 
         healthChecker.AddCheck("Check 3",

@@ -56,13 +56,21 @@ public sealed class HealthChecker
     /// <param name="name">Logical name of the health check.</param>
     /// <param name="check">Delegate that executes the check.</param>
     /// <param name="tags">Optional tags used for filtering.</param>
+    /// <param name="timeout">
+    /// Optional timeout for the health check execution.
+    /// The timeout is enforced via a <see cref="CancellationToken"/>.
+    /// The provided <paramref name="check"/> delegate must observe the token
+    /// for the timeout to be effective – for example by passing it to I/O calls
+    /// such as <see cref="HttpClient"/> methods or <see cref="Task.Delay(TimeSpan, CancellationToken)"/>.
+    /// </param>
     /// <returns>The current <see cref="HealthChecker"/> instance.</returns>
     /// <exception cref="ArgumentException">Thrown if <paramref name="name"/> is null or empty.</exception>
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="check"/> is null.</exception>
     public HealthChecker AddCheck(
         string name,
         Func<CancellationToken, Task<HealthCheckResult>> check,
-        IEnumerable<string>? tags = null)
+        IEnumerable<string>? tags = null,
+        TimeSpan? timeout = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(name);
         ArgumentNullException.ThrowIfNull(check);
@@ -72,7 +80,8 @@ public sealed class HealthChecker
         _checks.Add(new(
             name,
             tagArray?.Length > 0 ? tagArray : null,
-            check));
+            new LambdaHealthCheck(check),
+            timeout));
 
         return this;
     }
@@ -80,6 +89,10 @@ public sealed class HealthChecker
     /// <summary>
     /// Registers a health check without a cancellation token.
     /// </summary>
+    /// <remarks>
+    /// This overload does not support cooperative cancellation.
+    /// Use the CancellationToken overload to enable timeouts.
+    /// </remarks>
     /// <param name="name">Logical name of the health check.</param>
     /// <param name="check">Delegate that executes the check.</param>
     /// <param name="tags">Optional tags used for filtering.</param>
@@ -94,7 +107,7 @@ public sealed class HealthChecker
         ArgumentException.ThrowIfNullOrEmpty(name);
         ArgumentNullException.ThrowIfNull(check);
 
-        return AddCheck(name, _ => check(), tags);
+        return AddCheck(name, _ => check(), tags, null);
     }
 
     /// <summary>
@@ -194,7 +207,7 @@ public sealed class HealthChecker
         IEnumerable<HealthCheckRegistration> filteredChecks,
         CancellationToken cancellationToken = default)
     {
-        List<HealthCheckRegistration> checks = [.. filteredChecks];
+        var checks = filteredChecks.ToList();
 
         if (checks.Count == 0)
             return HealthStatus.Unknown;
@@ -205,15 +218,30 @@ public sealed class HealthChecker
         {
             cancellationToken.ThrowIfCancellationRequested();
 
+            CancellationTokenSource? timeoutCts = null;
+
             try
             {
-                var result = await check.Check(cancellationToken);
+                var effectiveToken = cancellationToken;
+
+                if (check.Timeout is not null)
+                {
+                    timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                    timeoutCts.CancelAfter(check.Timeout.Value);
+                    effectiveToken = timeoutCts.Token;
+                }
+
+                var result = await check.Check.CheckHealthAsync(effectiveToken);
 
                 if (result.Status == HealthStatus.Unhealthy)
                     return HealthStatus.Unhealthy;
 
                 if (result.Status == HealthStatus.Degraded)
                     overall = HealthStatus.Degraded;
+            }
+            catch (OperationCanceledException) when (timeoutCts?.IsCancellationRequested == true)
+            {
+                return HealthStatus.Unhealthy;
             }
             catch (OperationCanceledException)
             {
@@ -222,6 +250,10 @@ public sealed class HealthChecker
             catch
             {
                 return HealthStatus.Unhealthy;
+            }
+            finally
+            {
+                timeoutCts?.Dispose();
             }
         }
 
@@ -328,9 +360,20 @@ public sealed class HealthChecker
         var start = IncludeDuration ? stopwatch!.ElapsedMilliseconds : 0;
         var entry = new HealthReportEntry { Name = check.Name };
 
+        CancellationTokenSource? timeoutCancellationTokenSource = null;
+
         try
         {
-            var result = await check.Check(cancellationToken);
+            var effectiveToken = cancellationToken;
+
+            if (check.Timeout is not null)
+            {
+                timeoutCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                timeoutCancellationTokenSource.CancelAfter(check.Timeout.Value);
+                effectiveToken = timeoutCancellationTokenSource.Token;
+            }
+
+            var result = await check.Check.CheckHealthAsync(effectiveToken);
 
             entry.Status = result.Status;
             entry.Description = result.Description;
@@ -343,6 +386,18 @@ public sealed class HealthChecker
             if (result.Data?.Count > 0)
                 entry.Data = new Dictionary<string, object?>(result.Data);
         }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            entry.Status = HealthStatus.Unhealthy;
+            entry.Description = $"Health check timed out after {check.Timeout}";
+
+            if (IncludeErrors)
+                entry.Error = "Timeout exceeded";
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             entry.Status = HealthStatus.Unhealthy;
@@ -350,12 +405,15 @@ public sealed class HealthChecker
             if (IncludeErrors)
                 entry.Error = IncludeStackTrace ? ex.ToString() : ex.Message;
         }
+        finally
+        {
+            timeoutCancellationTokenSource?.Dispose();
+        }
 
         if (IncludeDuration)
             entry.DurationMs = stopwatch!.ElapsedMilliseconds - start;
 
-        if (check.Tags?.Length > 0)
-            entry.Tags = check.Tags;
+        entry.Tags = check.Tags;
 
         return entry;
     }
@@ -378,5 +436,6 @@ public sealed class HealthChecker
     private sealed record HealthCheckRegistration(
         string Name,
         string[]? Tags,
-        Func<CancellationToken, Task<HealthCheckResult>> Check);
+        IHealthCheck Check,
+        TimeSpan? Timeout);
 }
