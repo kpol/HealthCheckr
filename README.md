@@ -71,7 +71,7 @@ healthChecker.AddCheck("Check 2",
 );
 
 healthChecker.AddCheck("Check 3",
-    new CustomHealthCheck(),
+    new CustomHealthCheck(),  // Implements IHealthCheck interface
     tags: ["external", "critical"]
 );
 
@@ -115,25 +115,23 @@ HealthCheckr supports include and exclude tag filters to control which checks ru
 ## Example JSON Output
 
 ```json
-
-
 {
   "status": "Unhealthy",
   "checks": [
     {
       "name": "Check 2",
-      "description": "Health check timed out after 50 ms",
       "status": "Unhealthy",
+      "description": "Health check timed out after 50 ms",
       "error": "Timeout exceeded",
-      "durationMs": 55,
+      "durationMs": 72,
       "tags": [
         "external"
       ]
     },
     {
       "name": "Check 3",
-      "description": "Custom health check passed.",
       "status": "Healthy",
+      "description": "Custom health check passed.",
       "durationMs": 1,
       "tags": [
         "external",
@@ -141,8 +139,8 @@ HealthCheckr supports include and exclude tag filters to control which checks ru
       ]
     }
   ],
-  "totalDurationMs": 71,
-  "timestamp": "2026-01-26T22:17:29.6146647+00:00",
+  "totalDurationMs": 87,
+  "timestamp": "2026-01-26T23:37:58.2968958+00:00",
   "data": {
     "Environment": "Production",
     "Id": 42

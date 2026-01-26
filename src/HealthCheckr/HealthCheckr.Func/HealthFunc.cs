@@ -46,7 +46,7 @@ public class HealthFunc
         );
 
         healthChecker.AddCheck("Check 3",
-            new CustomHealthCheck(),
+            new CustomHealthCheck(), // Implements IHealthCheck interface
             tags: ["external", "critical"]
         );
 

@@ -15,18 +15,18 @@ public struct HealthReportEntry()
     public required string Name { get; init; }
 
     /// <summary>
-    /// A short, human-readable description of what the check verifies.
-    /// </summary>
-    /// <value>An optional string providing additional context; may be <c>null</c>.</value>
-    [JsonPropertyName("description")]
-    public string? Description { get; internal set; }
-
-    /// <summary>
     /// The resulting health status for this check.
     /// </summary>
     /// <value>A <see cref="HealthStatus"/> value indicating the current status.</value>
     [JsonPropertyName("status")]
     public HealthStatus Status { get; internal set; }
+
+    /// <summary>
+    /// A short, human-readable description of what the check verifies.
+    /// </summary>
+    /// <value>An optional string providing additional context; may be <c>null</c>.</value>
+    [JsonPropertyName("description")]
+    public string? Description { get; internal set; }
 
     /// <summary>
     /// An error message or exception detail associated with a failing check.
