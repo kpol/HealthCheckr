@@ -53,25 +53,23 @@ HealthChecker healthChecker = new()
 };
 
 healthChecker.AddCheck("Check 1",
-    static () => Task.FromResult(new HealthCheckResult { Status = HealthStatus.Healthy })
+    static () => Task.FromResult(HealthCheckResult.Healthy())
 );
 
 healthChecker.AddCheck("Check 2",
     static async ct =>
     {
         await Task.Delay(2000, ct);
-        return await Task.FromResult(new HealthCheckResult
-        {
-            Status = HealthStatus.Degraded,
-            Data = new Dictionary<string, object?> { ["Metadata1"] = 123 }
-        });
+        return await Task.FromResult(
+            HealthCheckResult.Degraded(
+                data: new Dictionary<string, object?> { ["Metadata1"] = 123 }));
     },
     tags: ["external"],
     timeout: TimeSpan.FromMilliseconds(50)
 );
 
 healthChecker.AddCheck("Check 3",
-    new CustomHealthCheck(),  // Implements IHealthCheck interface
+    new CustomHealthCheck(), // Implements IHealthCheck interface
     tags: ["external", "critical"]
 );
 
