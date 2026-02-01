@@ -20,53 +20,41 @@ public class HealthFunc
         HealthChecker healthChecker = new()
         {
             IncludeErrors = true,
-            Data = new Dictionary<string, object?>
+            Data = new()
             {
                 ["Environment"] = "Production",
                 ["Id"] = 42
             }
         };
 
-        // Add checks
         healthChecker.AddCheck("Check 1",
-            async () =>
-            {
-                return await Task.FromResult(new HealthCheckResult { Status = HealthStatus.Healthy });
-            }
+            static () => Task.FromResult(HealthCheckResult.Healthy())
         );
 
         healthChecker.AddCheck("Check 2",
-            async () =>
+            static async ct =>
             {
-                return await Task.FromResult(new HealthCheckResult
-                {
-                    Status = HealthStatus.Degraded,
-                    Data = new Dictionary<string, object?> { ["Metadata1"] = 123 }
-                });
+                await Task.Delay(2000, ct);
+                return await Task.FromResult(
+                    HealthCheckResult.Degraded(
+                        data: new Dictionary<string, object?> { ["Metadata1"] = 123 }));
             },
-            tags: ["external"]
+            tags: ["external"],
+            timeout: TimeSpan.FromMilliseconds(50)
         );
 
         healthChecker.AddCheck("Check 3",
-            async () =>
-            {
-                return await Task.FromResult(new HealthCheckResult { Status = HealthStatus.Unhealthy });
-            },
+            new CustomHealthCheck(), // Implements IHealthCheck interface
             tags: ["external", "critical"]
         );
 
         // Full JSON health report
-        var result = await healthChecker.CheckAsync(
-            includeTags: ["external"]
-        );
-
-
+        var result = await healthChecker.CheckAsync(includeTags: ["external"]);
 
         // Simple sequential check returning only HealthStatus
         var simpleStatus = await healthChecker.CheckSimpleAsync(
-            includeTags: ["external"],
-            excludeTags: null
-        );
+            includeTags: ["external"], 
+            excludeTags: null);
 
         Console.WriteLine(simpleStatus);
 
@@ -76,5 +64,17 @@ public class HealthFunc
             ContentType = "application/json",
             StatusCode = result.HttpStatusCode
         };
+    }
+}
+
+public sealed class CustomHealthCheck : IHealthCheck
+{
+    public Task<HealthCheckResult> CheckHealthAsync(CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(new HealthCheckResult
+        {
+            Status = HealthStatus.Healthy,
+            Description = "Custom health check passed."
+        });
     }
 }
