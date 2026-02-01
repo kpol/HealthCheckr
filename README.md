@@ -17,7 +17,7 @@ The library is framework-agnostic and has no dependency on ASP.NET, making it su
 - Per-check timeout support via cooperative cancellation
 - Works well in Azure Functions, serverless, worker services and web APIs
 - Minimal dependencies and easy to integrate
-- Optional “simple” sequential check returning only HealthStatus without JSON
+- Optional &ldquo;simple&rdquo; sequential check returning only HealthStatus without JSON
 
 ---
 
