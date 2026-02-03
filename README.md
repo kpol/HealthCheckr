@@ -57,18 +57,26 @@ healthChecker.AddCheck("Check 1",
 );
 
 healthChecker.AddCheck("Check 2",
-    static async ct =>
+    static ct =>
     {
-        await Task.Delay(2000, ct);
-        return await Task.FromResult(
-            HealthCheckResult.Degraded(
-                data: new Dictionary<string, object?> { ["Metadata1"] = 123 }));
+        return Task.FromResult(HealthCheckResult.Degraded(
+            description: "Check 2 is degraded.",
+            data: new Dictionary<string, object?> { ["Metadata1"] = 123 }));
     },
-    tags: ["external"],
-    timeout: TimeSpan.FromMilliseconds(50)
+    tags: ["external"]
 );
 
 healthChecker.AddCheck("Check 3",
+    static async ct =>
+    {
+        await Task.Delay(2000, ct);
+        return HealthCheckResult.Healthy();
+    },
+    tags: ["external"],
+    timeout: TimeSpan.FromMilliseconds(500)
+);
+
+healthChecker.AddCheck("Check 4",
     new CustomHealthCheck(), // Implements IHealthCheck interface
     tags: ["external", "critical"]
 );
@@ -78,7 +86,7 @@ var result = await healthChecker.CheckAsync(includeTags: ["external"]);
 
 // Simple sequential check returning only HealthStatus
 var simpleStatus = await healthChecker.CheckSimpleAsync(
-    includeTags: ["external"], 
+    includeTags: ["external"],
     excludeTags: null);
 
 Console.WriteLine(simpleStatus);
@@ -113,32 +121,45 @@ HealthCheckr supports include and exclude tag filters to control which checks ru
 ## Example JSON Output
 
 ```json
+
 {
   "status": "Unhealthy",
   "checks": [
     {
       "name": "Check 2",
-      "status": "Unhealthy",
-      "description": "Health check timed out after 50 ms",
-      "error": "Timeout exceeded",
-      "durationMs": 72,
+      "status": "Degraded",
+      "description": "Check 2 is degraded.",
+      "durationMs": 1,
+      "data": {
+        "Metadata1": 123
+      },
       "tags": [
         "external"
       ]
     },
     {
       "name": "Check 3",
+      "status": "Unhealthy",
+      "description": "Health check timed out after 500 ms",
+      "error": "Timeout exceeded",
+      "durationMs": 517,
+      "tags": [
+        "external"
+      ]
+    },
+    {
+      "name": "Check 4",
       "status": "Healthy",
       "description": "Custom health check passed.",
-      "durationMs": 1,
+      "durationMs": 0,
       "tags": [
         "external",
         "critical"
       ]
     }
   ],
-  "totalDurationMs": 87,
-  "timestamp": "2026-01-26T23:37:58.2968958+00:00",
+  "totalDurationMs": 539,
+  "timestamp": "2026-02-03T21:09:14.2535191+00:00",
   "data": {
     "Environment": "Production",
     "Id": 42

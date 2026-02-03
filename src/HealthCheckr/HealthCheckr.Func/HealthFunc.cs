@@ -32,18 +32,26 @@ public class HealthFunc
         );
 
         healthChecker.AddCheck("Check 2",
-            static async ct =>
+            static ct =>
             {
-                await Task.Delay(2000, ct);
-                return await Task.FromResult(
-                    HealthCheckResult.Degraded(
-                        data: new Dictionary<string, object?> { ["Metadata1"] = 123 }));
+                return Task.FromResult(HealthCheckResult.Degraded(
+                    description: "Check 2 is degraded.",
+                    data: new Dictionary<string, object?> { ["Metadata1"] = 123 }));
             },
-            tags: ["external"],
-            timeout: TimeSpan.FromMilliseconds(50)
+            tags: ["external"]
         );
 
         healthChecker.AddCheck("Check 3",
+            static async ct =>
+            {
+                await Task.Delay(2000, ct);
+                return HealthCheckResult.Healthy();
+            },
+            tags: ["external"],
+            timeout: TimeSpan.FromMilliseconds(500)
+        );
+
+        healthChecker.AddCheck("Check 4",
             new CustomHealthCheck(), // Implements IHealthCheck interface
             tags: ["external", "critical"]
         );
@@ -53,7 +61,7 @@ public class HealthFunc
 
         // Simple sequential check returning only HealthStatus
         var simpleStatus = await healthChecker.CheckSimpleAsync(
-            includeTags: ["external"], 
+            includeTags: ["external"],
             excludeTags: null);
 
         Console.WriteLine(simpleStatus);
