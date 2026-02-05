@@ -20,7 +20,7 @@ public class HealthFunc
         HealthChecker healthChecker = new()
         {
             IncludeErrors = true,
-            Data = new()
+            Data = new Dictionary<string, object?>
             {
                 ["Environment"] = "Production",
                 ["Id"] = 42
@@ -82,7 +82,7 @@ public sealed class CustomHealthCheck : IHealthCheck
         return Task.FromResult(new HealthCheckResult
         {
             Status = HealthStatus.Healthy,
-            Description = "Custom health check passed."
+            Description = "Custom health check passed"
         });
     }
 }

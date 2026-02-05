@@ -45,7 +45,7 @@ using HealthCheckr;
 HealthChecker healthChecker = new()
 {
     IncludeErrors = true,
-    Data = new()
+    Data = new Dictionary<string, object?>
     {
         ["Environment"] = "Production",
         ["Id"] = 42
@@ -150,7 +150,7 @@ HealthCheckr supports include and exclude tag filters to control which checks ru
     {
       "name": "Check 4",
       "status": "Healthy",
-      "description": "Custom health check passed.",
+      "description": "Custom health check passed",
       "durationMs": 0,
       "tags": [
         "external",

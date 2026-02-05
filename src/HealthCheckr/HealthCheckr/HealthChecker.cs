@@ -48,7 +48,7 @@ public sealed class HealthChecker
     /// <summary>
     /// Optional global data attached to the health report.
     /// </summary>
-    public Dictionary<string, object?>? Data { get; init; }
+    public IReadOnlyDictionary<string, object?>? Data { get; init; }
 
     /// <summary>
     /// Registers a health check with an asynchronous execution delegate.
@@ -78,13 +78,13 @@ public sealed class HealthChecker
         if (_checks.ContainsKey(name))
             throw new ArgumentException($"A health check with name '{name}' is already registered.", nameof(name));
 
-        var tagArray = tags?.ToArray();
+        HashSet<string>? tagSet = tags?.ToHashSet();
 
         _checks.Add(name, new(
             _checks.Count,
             name,
-            tagArray?.Length > 0 ? tagArray : null,
             new LambdaHealthCheck(check),
+            tagSet?.Count > 0 ? tagSet : null,
             timeout));
 
         return this;
@@ -127,7 +127,11 @@ public sealed class HealthChecker
     /// <returns>The current <see cref="HealthChecker"/> instance.</returns>
     /// <exception cref="ArgumentException">Thrown if <paramref name="name"/> is null or empty.</exception>
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="check"/> is null.</exception>
-    public HealthChecker AddCheck(string name, IHealthCheck check, IEnumerable<string>? tags = null, TimeSpan? timeout = null)
+    public HealthChecker AddCheck(
+        string name, 
+        IHealthCheck check, 
+        IEnumerable<string>? tags = null, 
+        TimeSpan? timeout = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(name);
         ArgumentNullException.ThrowIfNull(check);
@@ -135,13 +139,13 @@ public sealed class HealthChecker
         if (_checks.ContainsKey(name))
             throw new ArgumentException($"A health check with name '{name}' is already registered.", nameof(name));
 
-        var tagArray = tags?.ToArray();
+        var tagSet = tags?.ToHashSet();
 
         _checks.Add(name, new(
             _checks.Count,
             name,
-            tagArray?.Length > 0 ? tagArray : null,
             check,
+            tagSet?.Count > 0 ? tagSet : null,
             timeout));
 
         return this;
@@ -227,19 +231,23 @@ public sealed class HealthChecker
     /// Determines whether a health check should run based on include and exclude tag filters.
     /// </summary>
     private static bool ShouldRun(
-        string[]? checkTags,
+        HashSet<string>? checkTags,
         HashSet<string>? include,
         HashSet<string>? exclude)
     {
-        if (checkTags is null || checkTags.Length == 0)
+        // No tags on the check – only run when no filtering is applied
+        if (checkTags is not { Count: > 0 })
             return include is null && exclude is null;
 
-        if (exclude is not null && checkTags.Any(exclude.Contains))
+        // Exclude always wins
+        if (exclude?.Overlaps(checkTags) == true)
             return false;
 
+        // Include acts as a whitelist
         if (include is not null)
-            return checkTags.Any(include.Contains);
+            return include.Overlaps(checkTags);
 
+        // No include filter – run by default
         return true;
     }
 
@@ -248,7 +256,7 @@ public sealed class HealthChecker
     /// </summary>
     private static async Task<HealthStatus> CheckSimpleAsync(
         IEnumerable<HealthCheckRegistration> filteredChecks,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken)
     {
         var checks = filteredChecks.ToList();
 
@@ -486,7 +494,7 @@ public sealed class HealthChecker
     private sealed record HealthCheckRegistration(
         int Index,
         string Name,
-        string[]? Tags,
         IHealthCheck Check,
+        HashSet<string>? Tags,
         TimeSpan? Timeout);
 }
