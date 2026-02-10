@@ -33,7 +33,7 @@ public sealed class HealthChecker
     /// <summary>
     /// Indicates whether error messages should be included in the health report.
     /// </summary>
-    public bool IncludeErrors { get; init; } = false;
+    public bool IncludeErrors { get; init; } = true;
 
     /// <summary>
     /// Indicates whether full stack traces should be included when errors are reported.
@@ -167,6 +167,18 @@ public sealed class HealthChecker
         return await CheckInternalAsync(filteredChecks, cancellationToken);
     }
 
+    public Task<HealthReport> CheckAsync(
+        Func<HealthCheckDescriptor, bool> predicate,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(predicate);
+
+        var checks = _checks.Values
+            .Where(c => predicate(new HealthCheckDescriptor(c)));
+
+        return CheckInternalAsync(checks, cancellationToken);
+    }
+
     /// <summary>
     /// Executes a single named health check and returns a detailed <see cref="HealthReport"/>.
     /// </summary>
@@ -205,6 +217,19 @@ public sealed class HealthChecker
     {
         var checks = FilterChecks(includeTags, excludeTags).OrderBy(c => c.Index);
         return await CheckSimpleAsync([.. checks], cancellationToken);
+    }
+
+    public Task<HealthStatus> CheckSimpleAsync(
+        Func<HealthCheckDescriptor, bool> predicate,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(predicate);
+
+        var checks = _checks.Values
+            .Where(c => predicate(new HealthCheckDescriptor(c)))
+            .OrderBy(c => c.Index);
+
+        return CheckSimpleAsync(checks, cancellationToken);
     }
 
     /// <summary>
@@ -491,10 +516,20 @@ public sealed class HealthChecker
     /// <summary>
     /// Internal registration record for a health check.
     /// </summary>
-    private sealed record HealthCheckRegistration(
+    internal sealed record HealthCheckRegistration(
         int Index,
         string Name,
         IHealthCheck Check,
         HashSet<string>? Tags,
         TimeSpan? Timeout);
+}
+
+public sealed record HealthCheckDescriptor(
+    string Name,
+    IEnumerable<string>? Tags)
+{
+    internal HealthCheckDescriptor(HealthChecker.HealthCheckRegistration r)
+        : this(r.Name, r.Tags)
+    {
+    }
 }
