@@ -45,6 +45,7 @@ using HealthCheckr;
 HealthChecker healthChecker = new()
 {
     IncludeErrors = true,
+    IncludeStackTrace = true,
     Data = new Dictionary<string, object?>
     {
         ["Environment"] = "Production",
@@ -121,7 +122,6 @@ HealthCheckr supports include and exclude tag filters to control which checks ru
 ## Example JSON Output
 
 ```json
-
 {
   "status": "Unhealthy",
   "checks": [
@@ -129,7 +129,7 @@ HealthCheckr supports include and exclude tag filters to control which checks ru
       "name": "Check 2",
       "status": "Degraded",
       "description": "Check 2 is degraded.",
-      "durationMs": 1,
+      "durationMs": 2,
       "data": {
         "Metadata1": 123
       },
@@ -142,7 +142,7 @@ HealthCheckr supports include and exclude tag filters to control which checks ru
       "status": "Unhealthy",
       "description": "Health check timed out after 500 ms",
       "error": "Timeout exceeded",
-      "durationMs": 517,
+      "durationMs": 498,
       "tags": [
         "external"
       ]
@@ -158,8 +158,8 @@ HealthCheckr supports include and exclude tag filters to control which checks ru
       ]
     }
   ],
-  "totalDurationMs": 539,
-  "timestamp": "2026-02-03T21:09:14.2535191+00:00",
+  "totalDurationMs": 524,
+  "timestamp": "2026-02-10T04:13:23.9247878+00:00",
   "data": {
     "Environment": "Production",
     "Id": 42

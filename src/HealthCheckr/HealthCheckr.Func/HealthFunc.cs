@@ -20,6 +20,7 @@ public class HealthFunc
         HealthChecker healthChecker = new()
         {
             IncludeErrors = true,
+            IncludeStackTrace = true,
             Data = new Dictionary<string, object?>
             {
                 ["Environment"] = "Production",

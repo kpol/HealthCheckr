@@ -167,6 +167,22 @@ public sealed class HealthChecker
         return await CheckInternalAsync(filteredChecks, cancellationToken);
     }
 
+    /// <summary>
+    /// Executes all health checks that match the specified predicate in parallel
+    /// and returns a detailed health report.
+    /// </summary>
+    /// <param name="predicate">
+    /// A predicate used to select which health checks should be executed.
+    /// The predicate receives a <see cref="HealthCheckDescriptor"/> that exposes
+    /// metadata such as the check name and tags without allowing execution or mutation.
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>
+    /// A <see cref="Task{HealthReport}"/> representing the asynchronous operation.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="predicate"/> is <c>null</c>.
+    /// </exception>
     public Task<HealthReport> CheckAsync(
         Func<HealthCheckDescriptor, bool> predicate,
         CancellationToken cancellationToken = default)
@@ -219,6 +235,26 @@ public sealed class HealthChecker
         return await CheckSimpleAsync([.. checks], cancellationToken);
     }
 
+    /// <summary>
+    /// Executes health checks that match the specified predicate sequentially
+    /// and returns the overall health status only.
+    /// </summary>
+    /// <remarks>
+    /// Checks are executed in registration order and execution stops immediately
+    /// when a check returns <see cref="HealthStatus.Unhealthy"/>.
+    /// </remarks>
+    /// <param name="predicate">
+    /// A predicate used to select which health checks should be executed.
+    /// The predicate receives a <see cref="HealthCheckDescriptor"/> that provides
+    /// read-only metadata such as the check name and tags.
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>
+    /// The overall <see cref="HealthStatus"/> of the executed checks.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="predicate"/> is <c>null</c>.
+    /// </exception>
     public Task<HealthStatus> CheckSimpleAsync(
         Func<HealthCheckDescriptor, bool> predicate,
         CancellationToken cancellationToken = default)
@@ -524,6 +560,20 @@ public sealed class HealthChecker
         TimeSpan? Timeout);
 }
 
+/// <summary>
+/// Describes a registered health check using read-only metadata
+/// that can be safely exposed for filtering and selection.
+/// </summary>
+/// <remarks>
+/// This descriptor does not allow execution or modification of the health check.
+/// It is primarily used by predicate-based APIs to decide which checks should run
+/// based on their name or tags.
+/// </remarks>
+/// <param name="Name">The unique name of the health check.</param>
+/// <param name="Tags">
+/// Optional tags associated with the health check.
+/// Tags can be used to group and filter checks during execution.
+/// </param>
 public sealed record HealthCheckDescriptor(
     string Name,
     IEnumerable<string>? Tags)
