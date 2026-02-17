@@ -19,8 +19,6 @@ The library is framework-agnostic and has no dependency on ASP.NET, making it su
 - Minimal dependencies and easy to integrate
 - Optional &ldquo;simple&rdquo; sequential check returning only HealthStatus without JSON
 
----
-
 ## Installation
 
 Install via NuGet:
@@ -35,7 +33,6 @@ Or via the NuGet Package Manager:
 PM> Install-Package HealthCheckr
 ```
 
----
 
 ## Usage
 
@@ -100,8 +97,6 @@ return new ContentResult
 };
 ```
 
----
-
 ## Tag filtering semantics
 
 HealthCheckr supports include and exclude tag filters to control which checks run.
@@ -117,7 +112,6 @@ HealthCheckr supports include and exclude tag filters to control which checks ru
 3. **Untagged checks are excluded when filters are present**  
    If a check has no tags it will only run when no include or exclude filters are provided.
 
----
 
 ## Example JSON Output
 
@@ -167,21 +161,12 @@ HealthCheckr supports include and exclude tag filters to control which checks ru
 }
 ```
 
----
 
 ## Configuration
 
 - `IncludeErrors` &ndash; Include exception details for failing checks
 - `IncludeDuration` &ndash; Include execution duration per check
 - `HealthyHttpStatusCode` / `DegradedHttpStatusCode` / `UnhealthyHttpStatusCode` &ndash; Customize HTTP response codes for the overall status
-
----
-
-## Contributing
-
-Contributions are welcome. Please open an issue or pull request on GitHub.
-
----
 
 ## License
 
