@@ -1,8 +1,11 @@
-﻿namespace HealthCheckr;
+﻿using System.Text.Json.Serialization;
+
+namespace HealthCheckr;
 
 /// <summary>
 /// Represents the possible outcomes of a health check execution.
 /// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum HealthStatus
 {
     /// <summary>

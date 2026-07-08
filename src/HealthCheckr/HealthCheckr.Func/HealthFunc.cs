@@ -5,14 +5,9 @@ using Microsoft.Extensions.Logging;
 
 namespace HealthCheckr.Func;
 
-public class HealthFunc
+public class HealthFunc(ILogger<HealthFunc> logger)
 {
-    private readonly ILogger<HealthFunc> _logger;
-
-    public HealthFunc(ILogger<HealthFunc> logger)
-    {
-        _logger = logger;
-    }
+    private readonly ILogger<HealthFunc> _logger = logger;
 
     [Function("Health")]
     public async Task<IActionResult> Run([HttpTrigger(AuthorizationLevel.Anonymous, "get")] HttpRequest req)
