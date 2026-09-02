@@ -31,6 +31,7 @@ public struct HealthReport()
     /// Gets the timestamp when the <see cref="HealthReport"/> instance was created.
     /// </summary>
     [JsonPropertyName("timestamp")]
+    [JsonConverter(typeof(DateTimeOffsetZConverter))]
     public readonly DateTimeOffset Timestamp { get; } = DateTimeOffset.UtcNow;
 
     /// <summary>

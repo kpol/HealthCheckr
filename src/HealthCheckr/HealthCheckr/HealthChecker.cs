@@ -9,7 +9,7 @@ namespace HealthCheckr;
 /// </summary>
 /// <remarks>
 /// - Full checks are executed in parallel and return per-check details.
-/// - Simple checks are executed sequentially and short-circuit on failure.
+/// - Simple checks are executed concurrently and short-circuit as soon as any check reports failure.
 /// </remarks>
 public sealed class HealthChecker
 {
@@ -217,10 +217,12 @@ public sealed class HealthChecker
     }
 
     /// <summary>
-    /// Executes matching health checks sequentially and returns the overall status only.
+    /// Executes matching health checks concurrently and returns the overall status only.
     /// </summary>
     /// <remarks>
-    /// Execution stops immediately if a check returns <see cref="HealthStatus.Unhealthy"/>.
+    /// All matching checks are started immediately. As soon as any check reports
+    /// <see cref="HealthStatus.Unhealthy"/>, the method returns that result and the
+    /// remaining in-flight checks are signalled to cancel cooperatively.
     /// </remarks>
     /// <param name="includeTags">Tags that must be present for a check to run.</param>
     /// <param name="excludeTags">Tags that prevent a check from running.</param>
@@ -236,12 +238,13 @@ public sealed class HealthChecker
     }
 
     /// <summary>
-    /// Executes health checks that match the specified predicate sequentially
+    /// Executes health checks that match the specified predicate concurrently
     /// and returns the overall health status only.
     /// </summary>
     /// <remarks>
-    /// Checks are executed in registration order and execution stops immediately
-    /// when a check returns <see cref="HealthStatus.Unhealthy"/>.
+    /// All matching checks are started immediately. As soon as any check reports
+    /// <see cref="HealthStatus.Unhealthy"/>, the method returns that result and the
+    /// remaining in-flight checks are signalled to cancel cooperatively.
     /// </remarks>
     /// <param name="predicate">
     /// A predicate used to select which health checks should be executed.
@@ -269,7 +272,7 @@ public sealed class HealthChecker
     }
 
     /// <summary>
-    /// Executes a single named health check sequentially and returns the overall status.
+    /// Executes a single named health check and returns the overall status.
     /// </summary>
     /// <param name="checkName">The name of the health check to execute.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -313,66 +316,6 @@ public sealed class HealthChecker
     }
 
     /// <summary>
-    /// Executes health checks sequentially and short-circuits on unhealthy results.
-    /// </summary>
-    private static async Task<HealthStatus> CheckSimpleAsync(
-        IEnumerable<HealthCheckRegistration> filteredChecks,
-        CancellationToken cancellationToken)
-    {
-        var checks = filteredChecks.ToList();
-
-        if (checks.Count == 0)
-            return HealthStatus.Unknown;
-
-        var overall = HealthStatus.Healthy;
-
-        foreach (var check in checks)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            CancellationTokenSource? timeoutCancellationTokenSource = null;
-
-            try
-            {
-                var effectiveToken = cancellationToken;
-
-                if (check.Timeout is not null)
-                {
-                    timeoutCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                    timeoutCancellationTokenSource.CancelAfter(check.Timeout.Value);
-                    effectiveToken = timeoutCancellationTokenSource.Token;
-                }
-
-                var result = await check.Check.CheckHealthAsync(effectiveToken);
-
-                if (result.Status == HealthStatus.Unhealthy)
-                    return HealthStatus.Unhealthy;
-
-                if (result.Status == HealthStatus.Degraded)
-                    overall = HealthStatus.Degraded;
-            }
-            catch (OperationCanceledException) when (timeoutCancellationTokenSource?.IsCancellationRequested == true)
-            {
-                return HealthStatus.Unhealthy;
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch
-            {
-                return HealthStatus.Unhealthy;
-            }
-            finally
-            {
-                timeoutCancellationTokenSource?.Dispose();
-            }
-        }
-
-        return overall;
-    }
-
-    /// <summary>
     /// Aggregates individual health statuses into a single overall status.
     /// </summary>
     private static HealthStatus GetOverallStatus(IEnumerable<HealthStatus> statuses)
@@ -390,6 +333,91 @@ public sealed class HealthChecker
 
         return overallStatus;
     }
+
+    #region Simple Checks
+
+    private static async Task<HealthStatus> CheckSimpleAsync(
+        IEnumerable<HealthCheckRegistration> filteredChecks,
+        CancellationToken cancellationToken)
+    {
+        var checks = filteredChecks.ToList();
+
+        if (checks.Count == 0)
+            return HealthStatus.Unknown;
+
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
+        var remaining = checks
+            .Select(check => RunSingleSimpleCheckAsync(check, linkedCts.Token, cancellationToken))
+            .ToList();
+
+        var overall = HealthStatus.Healthy;
+
+        while (remaining.Count > 0)
+        {
+            var completed = await Task.WhenAny(remaining);
+            remaining.Remove(completed);
+
+            HealthStatus status;
+
+            try
+            {
+                status = await completed;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+
+            if (status == HealthStatus.Unhealthy)
+            {
+                linkedCts.Cancel();
+                return HealthStatus.Unhealthy;
+            }
+
+            if (status == HealthStatus.Degraded)
+                overall = HealthStatus.Degraded;
+        }
+
+        return overall;
+    }
+
+    private static async Task<HealthStatus> RunSingleSimpleCheckAsync(
+        HealthCheckRegistration check,
+        CancellationToken linkedToken,
+        CancellationToken originalToken)
+    {
+        CancellationTokenSource? timeoutCts = null;
+
+        try
+        {
+            var effectiveToken = linkedToken;
+
+            if (check.Timeout is not null)
+            {
+                timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(linkedToken);
+                timeoutCts.CancelAfter(check.Timeout.Value);
+                effectiveToken = timeoutCts.Token;
+            }
+
+            var result = await check.Check.CheckHealthAsync(effectiveToken);
+            return result.Status;
+        }
+        catch (OperationCanceledException) when (originalToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            return HealthStatus.Unhealthy;
+        }
+        finally
+        {
+            timeoutCts?.Dispose();
+        }
+    }
+
+    #endregion
 
     /// <summary>
     /// Filters registered health checks using include and exclude tag sets.
@@ -494,6 +522,10 @@ public sealed class HealthChecker
             if (result.Data?.Count > 0)
                 entry.Data = new Dictionary<string, object?>(result.Data);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (OperationCanceledException) when (timeoutCancellationTokenSource?.IsCancellationRequested == true)
         {
             entry.Status = HealthStatus.Unhealthy;
@@ -522,9 +554,6 @@ public sealed class HealthChecker
         return entry;
     }
 
-    /// <summary>
-    /// Maps a health status to an HTTP status code.
-    /// </summary>
     private int GetHttpStatusCode(HealthStatus status)
         => status switch
         {
