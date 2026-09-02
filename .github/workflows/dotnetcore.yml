@@ -38,7 +38,7 @@ jobs:
         run: dotnet pack ./src/HealthCheckr/HealthCheckr/HealthCheckr.csproj --configuration Release -o package
 
       - name: Upload NuGet package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: NuGetPackage
           path: package/*.nupkg
