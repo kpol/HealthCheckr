@@ -19,7 +19,7 @@ jobs:
         run: dotnet build ./src/HealthCheckr/HealthCheckr.slnx --configuration Release
 
       - name: Test
-        run: dotnet test ./src/HealthCheckr/HealthCheckr.slnx
+        run: dotnet test --solution ./src/HealthCheckr/HealthCheckr.slnx --configuration Release --no-build
 
   pack:
     runs-on: ubuntu-latest

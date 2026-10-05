@@ -14,7 +14,7 @@ The library is framework-agnostic and has no dependency on ASP.NET, making it su
 - Configurable HTTP return codes and optional diagnostics
 - Attach arbitrary metadata at the global or per-check level (for example region, version, dependency info)
 - Tag-based filtering with include and exclude semantics
-- Per-check timeout support via cooperative cancellation
+- Per-check timeouts, enforced even for checks that ignore cancellation
 - Works well in Azure Functions, serverless, worker services and web APIs
 - Minimal dependencies and easy to integrate
 - Optional &ldquo;simple&rdquo; sequential check returning only HealthStatus without JSON
