@@ -55,7 +55,7 @@ public class HealthFunc(ILogger<HealthFunc> logger)
         // Full JSON health report
         var result = await healthChecker.CheckAsync(includeTags: ["external"]);
 
-        // Simple sequential check returning only HealthStatus
+        // Overall status only, without a report; returns as soon as any check fails
         var simpleStatus = await healthChecker.CheckSimpleAsync(
             includeTags: ["external"],
             excludeTags: null);

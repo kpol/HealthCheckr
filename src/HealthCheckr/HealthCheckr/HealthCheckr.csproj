@@ -19,6 +19,13 @@ The library is framework-agnostic and has no dependency on ASP.NET, making it su
 		<PackageIcon>icon.png</PackageIcon>
 	</PropertyGroup>
 
+	<PropertyGroup>
+		<!-- Fails pack on breaking API changes against the last release. Intentional breaks are listed in
+		     CompatibilitySuppressions.xml; after releasing, bump the baseline and delete that file. -->
+		<EnablePackageValidation>true</EnablePackageValidation>
+		<PackageValidationBaselineVersion>2.1.0</PackageValidationBaselineVersion>
+	</PropertyGroup>
+
 	<ItemGroup>
 		<None Include="..\..\..\img\icon.png">
 			<Pack>True</Pack>

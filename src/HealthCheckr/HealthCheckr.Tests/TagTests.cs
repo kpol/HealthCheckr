@@ -72,6 +72,25 @@ public class TagTests
     }
 
     [Fact]
+    public async Task CheckAsync_TagFilters_IgnoreCase()
+    {
+        var report = await CreateChecker().CheckAsync(includeTags: ["EXTERNAL"], excludeTags: ["Slow"], cancellationToken: TestToken);
+
+        Assert.Equal(["api"], report.Checks.Select(c => c.Name));
+    }
+
+    [Fact]
+    public async Task AddCheck_TagsDifferingOnlyByCase_KeepFirstSpelling()
+    {
+        HealthChecker healthChecker = new();
+        healthChecker.AddCheck("check", static () => Task.FromResult(HealthCheckResult.Healthy()), tags: ["Db", "db", "DB"]);
+
+        var report = await healthChecker.CheckAsync(cancellationToken: TestToken);
+
+        Assert.Equal(["Db"], Assert.Single(report.Checks).Tags!);
+    }
+
+    [Fact]
     public async Task CheckAsync_Predicate_SelectsMatchingChecks()
     {
         var report = await CreateChecker().CheckAsync(d => d.Tags?.Contains("external") == true, TestToken);

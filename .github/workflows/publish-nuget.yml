@@ -20,24 +20,25 @@ jobs:
             8.0.x
             10.0.x
 
+      - name: Extract version from tag
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
+
       - name: Restore
         run: dotnet restore ./src/HealthCheckr/HealthCheckr.slnx
 
+      # The version is set at build time so the DLL's assembly and file versions match the package
       - name: Build
-        run: dotnet build ./src/HealthCheckr/HealthCheckr.slnx --configuration Release --no-restore
+        run: dotnet build ./src/HealthCheckr/HealthCheckr.slnx --configuration Release --no-restore -p:Version=${{ env.VERSION }}
 
       - name: Test
         run: dotnet test --solution ./src/HealthCheckr/HealthCheckr.slnx --configuration Release --no-build
-
-      - name: Extract version from tag
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
 
       - name: Pack
         run: >
           dotnet pack ./src/HealthCheckr/HealthCheckr/HealthCheckr.csproj
           --configuration Release
           --no-build
-          -p:PackageVersion=${{ env.VERSION }}
+          -p:Version=${{ env.VERSION }}
           -o ./package
 
       - name: Publish to NuGet

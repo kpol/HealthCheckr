@@ -168,6 +168,44 @@ public class TimeoutAndConcurrencyTests
         Assert.Equal(["first", "second"], report.Checks.Select(c => c.Name));
     }
 
+    [Fact(Timeout = 10_000)]
+    public async Task CheckAsync_EarlierRunStillInProgress_WaitsForItInsteadOfStartingAnother()
+    {
+        var hang = new TaskCompletionSource<HealthCheckResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var runs = 0;
+        HealthChecker healthChecker = new();
+        healthChecker.AddCheck("hangs", _ =>
+        {
+            Interlocked.Increment(ref runs);
+            started.TrySetResult();
+            return hang.Task;
+        }, timeout: CheckTimeout);
+
+        try
+        {
+            AssertTimedOut(await healthChecker.CheckAsync(cancellationToken: TestContext.Current.CancellationToken));
+            await started.Task.WaitAsync(TestContext.Current.CancellationToken);
+
+            AssertTimedOut(await healthChecker.CheckAsync(cancellationToken: TestContext.Current.CancellationToken));
+            Assert.Equal(HealthStatus.Unhealthy, await healthChecker.CheckSimpleAsync(cancellationToken: TestContext.Current.CancellationToken));
+
+            Assert.Equal(1, Volatile.Read(ref runs));
+        }
+        finally
+        {
+            hang.TrySetResult(HealthCheckResult.Healthy());
+        }
+
+        // Once the stuck run finishes, the check reports normally again
+        HealthReport report;
+        do
+        {
+            report = await healthChecker.CheckAsync(cancellationToken: TestContext.Current.CancellationToken);
+        }
+        while (report.Status != HealthStatus.Healthy);
+    }
+
     // Blocks until the other check arrives, which only happens if both checks run at the same time
     private static HealthCheckResult Rendezvous(Barrier barrier) =>
         barrier.SignalAndWait(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken)
