@@ -1,8 +1,11 @@
-﻿namespace HealthCheckr;
+﻿using System.Text.Json.Serialization;
+
+namespace HealthCheckr;
 
 /// <summary>
 /// Represents the possible outcomes of a health check execution.
 /// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum HealthStatus
 {
     /// <summary>
@@ -10,6 +13,8 @@ public enum HealthStatus
     /// </summary>
     /// <remarks>
     /// This value is returned when no health checks were executed.
+    /// If an individual check returns it, the check counts as <see cref="Unhealthy"/>
+    /// when the overall status is computed.
     /// </remarks>
     Unknown = -1,
 

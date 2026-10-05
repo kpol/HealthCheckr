@@ -20,18 +20,32 @@ public static class HealthReportExtensions
     };
 
     /// <summary>
-    /// Serializes the specified <see cref="HealthReport"/> to a JSON string.
+    /// Defines extensions for the <see cref="HealthReport"/>.
     /// </summary>
     /// <param name="healthReport">The health report to serialize.</param>
-    /// <returns>A JSON string representation of the health report.</returns>
-    public static string ToJson(this HealthReport healthReport) =>
-        JsonSerializer.Serialize(healthReport, Options);
+    extension(HealthReport healthReport)
+    {
+        /// <summary>
+        /// Serializes the specified <see cref="HealthReport"/> to a JSON string.
+        /// </summary>
+        /// <returns>A JSON string representation of the health report.</returns>
+        public string ToJson() => 
+            JsonSerializer.Serialize(healthReport, Options);
 
-    /// <summary>
-    /// Serializes the specified <see cref="HealthReport"/> to JSON and writes it to the provided stream.
-    /// </summary>
-    /// <param name="healthReport">The health report to serialize.</param>
-    /// <param name="stream">The stream to which the JSON will be written.</param>
-    public static void ToJson(this HealthReport healthReport, Stream stream) =>
-        JsonSerializer.Serialize(stream, healthReport, Options);
+        /// <summary>
+        /// Serializes the specified <see cref="HealthReport"/> to JSON and writes it to the provided stream.
+        /// </summary>
+        /// <param name="stream">The stream to which the JSON will be written.</param>
+        public void ToJson(Stream stream) =>
+            JsonSerializer.Serialize(stream, healthReport, Options);
+
+        /// <summary>
+        /// Serializes the specified <see cref="HealthReport"/> to JSON asynchronously and writes it to the provided stream.
+        /// </summary>
+        /// <param name="stream">The stream to which the JSON will be written.</param>
+        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+        /// <returns>A task representing the asynchronous operation.</returns>
+        public Task ToJsonAsync(Stream stream, CancellationToken cancellationToken = default) =>
+            JsonSerializer.SerializeAsync(stream, healthReport, Options, cancellationToken);
+    }
 }

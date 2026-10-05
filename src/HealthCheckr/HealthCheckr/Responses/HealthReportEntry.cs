@@ -54,5 +54,5 @@ public struct HealthReportEntry()
     /// </summary>
     /// <value>An optional array of string tags; may be <c>null</c> or empty.</value>
     [JsonPropertyName("tags")]
-    public string[]? Tags { get; internal set; }
+    public IEnumerable<string>? Tags { get; internal set; }
 }

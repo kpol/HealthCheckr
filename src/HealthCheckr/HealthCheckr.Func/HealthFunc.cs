@@ -5,14 +5,9 @@ using Microsoft.Extensions.Logging;
 
 namespace HealthCheckr.Func;
 
-public class HealthFunc
+public class HealthFunc(ILogger<HealthFunc> logger)
 {
-    private readonly ILogger<HealthFunc> _logger;
-
-    public HealthFunc(ILogger<HealthFunc> logger)
-    {
-        _logger = logger;
-    }
+    private readonly ILogger<HealthFunc> _logger = logger;
 
     [Function("Health")]
     public async Task<IActionResult> Run([HttpTrigger(AuthorizationLevel.Anonymous, "get")] HttpRequest req)
@@ -20,7 +15,8 @@ public class HealthFunc
         HealthChecker healthChecker = new()
         {
             IncludeErrors = true,
-            Data = new()
+            IncludeStackTrace = true,
+            Data = new Dictionary<string, object?>
             {
                 ["Environment"] = "Production",
                 ["Id"] = 42
@@ -32,18 +28,26 @@ public class HealthFunc
         );
 
         healthChecker.AddCheck("Check 2",
-            static async ct =>
+            static ct =>
             {
-                await Task.Delay(2000, ct);
-                return await Task.FromResult(
-                    HealthCheckResult.Degraded(
-                        data: new Dictionary<string, object?> { ["Metadata1"] = 123 }));
+                return Task.FromResult(HealthCheckResult.Degraded(
+                    description: "Check 2 is degraded.",
+                    data: new Dictionary<string, object?> { ["Metadata1"] = 123 }));
             },
-            tags: ["external"],
-            timeout: TimeSpan.FromMilliseconds(50)
+            tags: ["external"]
         );
 
         healthChecker.AddCheck("Check 3",
+            static async ct =>
+            {
+                await Task.Delay(2000, ct);
+                return HealthCheckResult.Healthy();
+            },
+            tags: ["external"],
+            timeout: TimeSpan.FromMilliseconds(500)
+        );
+
+        healthChecker.AddCheck("Check 4",
             new CustomHealthCheck(), // Implements IHealthCheck interface
             tags: ["external", "critical"]
         );
@@ -51,9 +55,9 @@ public class HealthFunc
         // Full JSON health report
         var result = await healthChecker.CheckAsync(includeTags: ["external"]);
 
-        // Simple sequential check returning only HealthStatus
+        // Overall status only, without a report; returns as soon as any check fails
         var simpleStatus = await healthChecker.CheckSimpleAsync(
-            includeTags: ["external"], 
+            includeTags: ["external"],
             excludeTags: null);
 
         Console.WriteLine(simpleStatus);
@@ -74,7 +78,7 @@ public sealed class CustomHealthCheck : IHealthCheck
         return Task.FromResult(new HealthCheckResult
         {
             Status = HealthStatus.Healthy,
-            Description = "Custom health check passed."
+            Description = "Custom health check passed"
         });
     }
 }

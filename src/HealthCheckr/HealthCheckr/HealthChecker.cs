@@ -9,7 +9,7 @@ namespace HealthCheckr;
 /// </summary>
 /// <remarks>
 /// - Full checks are executed in parallel and return per-check details.
-/// - Simple checks are executed sequentially and short-circuit on failure.
+/// - Simple checks are executed concurrently and short-circuit as soon as any check reports failure.
 /// </remarks>
 public sealed class HealthChecker
 {
@@ -33,7 +33,7 @@ public sealed class HealthChecker
     /// <summary>
     /// Indicates whether error messages should be included in the health report.
     /// </summary>
-    public bool IncludeErrors { get; init; } = false;
+    public bool IncludeErrors { get; init; } = true;
 
     /// <summary>
     /// Indicates whether full stack traces should be included when errors are reported.
@@ -48,20 +48,33 @@ public sealed class HealthChecker
     /// <summary>
     /// Optional global data attached to the health report.
     /// </summary>
-    public Dictionary<string, object?>? Data { get; init; }
+    public IReadOnlyDictionary<string, object?>? Data { get; init; }
+
+    /// <summary>
+    /// How long each check's result is reused before the check runs again.
+    /// </summary>
+    /// <remarks>
+    /// Every outcome is cached per check, including failures and timeouts, so frequent calls
+    /// such as load balancer probes don't hit each dependency every time.
+    /// The cache is shared by all <c>CheckAsync</c> and <c>CheckSimpleAsync</c> overloads.
+    /// Cached entries keep the duration of the run that produced them.
+    /// <c>null</c> (the default) or <see cref="TimeSpan.Zero"/> disables caching.
+    /// </remarks>
+    public TimeSpan? CacheDuration { get; init; }
 
     /// <summary>
     /// Registers a health check with an asynchronous execution delegate.
     /// </summary>
     /// <param name="name">A unique name used to identify the health check.</param>
     /// <param name="check">Delegate that executes the check.</param>
-    /// <param name="tags">Optional tags used for filtering.</param>
+    /// <param name="tags">Optional tags used for filtering. Tags are matched case-insensitively.</param>
     /// <param name="timeout">
     /// Optional timeout for the health check execution.
-    /// The timeout is enforced via a <see cref="CancellationToken"/>.
-    /// The provided <paramref name="check"/> delegate must observe the token
-    /// for the timeout to be effective – for example by passing it to I/O calls
-    /// such as <see cref="HttpClient"/> methods or <see cref="Task.Delay(TimeSpan, CancellationToken)"/>.
+    /// When it elapses the check is reported as <see cref="HealthStatus.Unhealthy"/>,
+    /// even if the <paramref name="check"/> delegate ignores cancellation.
+    /// The delegate should still observe the token – for example by passing it to I/O calls
+    /// such as <see cref="HttpClient"/> methods or <see cref="Task.Delay(TimeSpan, CancellationToken)"/> –
+    /// so that the underlying work stops instead of continuing in the background.
     /// </param>
     /// <returns>The current <see cref="HealthChecker"/> instance.</returns>
     /// <exception cref="ArgumentException">Thrown if <paramref name="name"/> is null or empty.</exception>
@@ -75,19 +88,7 @@ public sealed class HealthChecker
         ArgumentException.ThrowIfNullOrEmpty(name);
         ArgumentNullException.ThrowIfNull(check);
 
-        if (_checks.ContainsKey(name))
-            throw new ArgumentException($"A health check with name '{name}' is already registered.", nameof(name));
-
-        var tagArray = tags?.ToArray();
-
-        _checks.Add(name, new(
-            _checks.Count,
-            name,
-            tagArray?.Length > 0 ? tagArray : null,
-            new LambdaHealthCheck(check),
-            timeout));
-
-        return this;
+        return AddCheck(name, new LambdaHealthCheck(check), tags, timeout);
     }
 
     /// <summary>
@@ -99,7 +100,7 @@ public sealed class HealthChecker
     /// </remarks>
     /// <param name="name">A unique name used to identify the health check.</param>
     /// <param name="check">Delegate that executes the check.</param>
-    /// <param name="tags">Optional tags used for filtering.</param>
+    /// <param name="tags">Optional tags used for filtering. Tags are matched case-insensitively.</param>
     /// <returns>The current <see cref="HealthChecker"/> instance.</returns>
     /// <exception cref="ArgumentException">Thrown if <paramref name="name"/> is null or empty.</exception>
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="check"/> is null.</exception>
@@ -122,12 +123,16 @@ public sealed class HealthChecker
     /// </summary>
     /// <param name="name">A unique name used to identify the health check.</param>
     /// <param name="check">The health check implementation to execute.</param>
-    /// <param name="tags">Optional tags used for filtering.</param>
+    /// <param name="tags">Optional tags used for filtering. Tags are matched case-insensitively.</param>
     /// <param name="timeout">Optional timeout that limits how long the health check is allowed to run.</param>
     /// <returns>The current <see cref="HealthChecker"/> instance.</returns>
     /// <exception cref="ArgumentException">Thrown if <paramref name="name"/> is null or empty.</exception>
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="check"/> is null.</exception>
-    public HealthChecker AddCheck(string name, IHealthCheck check, IEnumerable<string>? tags = null, TimeSpan? timeout = null)
+    public HealthChecker AddCheck(
+        string name, 
+        IHealthCheck check, 
+        IEnumerable<string>? tags = null, 
+        TimeSpan? timeout = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(name);
         ArgumentNullException.ThrowIfNull(check);
@@ -135,13 +140,14 @@ public sealed class HealthChecker
         if (_checks.ContainsKey(name))
             throw new ArgumentException($"A health check with name '{name}' is already registered.", nameof(name));
 
-        var tagArray = tags?.ToArray();
+        // Read-only so the tags exposed through reports and descriptors can't alter filtering
+        string[]? tagArray = tags?.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
 
         _checks.Add(name, new(
             _checks.Count,
             name,
-            tagArray?.Length > 0 ? tagArray : null,
             check,
+            tagArray?.Length > 0 ? Array.AsReadOnly(tagArray) : null,
             timeout));
 
         return this;
@@ -161,6 +167,34 @@ public sealed class HealthChecker
     {
         var filteredChecks = FilterChecks(includeTags, excludeTags);
         return await CheckInternalAsync(filteredChecks, cancellationToken);
+    }
+
+    /// <summary>
+    /// Executes all health checks that match the specified predicate in parallel
+    /// and returns a detailed health report.
+    /// </summary>
+    /// <param name="predicate">
+    /// A predicate used to select which health checks should be executed.
+    /// The predicate receives a <see cref="HealthCheckDescriptor"/> that exposes
+    /// metadata such as the check name and tags without allowing execution or mutation.
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>
+    /// A <see cref="Task{HealthReport}"/> representing the asynchronous operation.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="predicate"/> is <c>null</c>.
+    /// </exception>
+    public Task<HealthReport> CheckAsync(
+        Func<HealthCheckDescriptor, bool> predicate,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(predicate);
+
+        var checks = _checks.Values
+            .Where(c => predicate(new HealthCheckDescriptor(c)));
+
+        return CheckInternalAsync(checks, cancellationToken);
     }
 
     /// <summary>
@@ -185,10 +219,12 @@ public sealed class HealthChecker
     }
 
     /// <summary>
-    /// Executes matching health checks sequentially and returns the overall status only.
+    /// Executes matching health checks concurrently and returns the overall status only.
     /// </summary>
     /// <remarks>
-    /// Execution stops immediately if a check returns <see cref="HealthStatus.Unhealthy"/>.
+    /// All matching checks are started immediately. As soon as any check reports
+    /// <see cref="HealthStatus.Unhealthy"/>, the method returns that result and the
+    /// remaining in-flight checks are signalled to cancel cooperatively.
     /// </remarks>
     /// <param name="includeTags">Tags that must be present for a check to run.</param>
     /// <param name="excludeTags">Tags that prevent a check from running.</param>
@@ -204,7 +240,41 @@ public sealed class HealthChecker
     }
 
     /// <summary>
-    /// Executes a single named health check sequentially and returns the overall status.
+    /// Executes health checks that match the specified predicate concurrently
+    /// and returns the overall health status only.
+    /// </summary>
+    /// <remarks>
+    /// All matching checks are started immediately. As soon as any check reports
+    /// <see cref="HealthStatus.Unhealthy"/>, the method returns that result and the
+    /// remaining in-flight checks are signalled to cancel cooperatively.
+    /// </remarks>
+    /// <param name="predicate">
+    /// A predicate used to select which health checks should be executed.
+    /// The predicate receives a <see cref="HealthCheckDescriptor"/> that provides
+    /// read-only metadata such as the check name and tags.
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>
+    /// The overall <see cref="HealthStatus"/> of the executed checks.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="predicate"/> is <c>null</c>.
+    /// </exception>
+    public Task<HealthStatus> CheckSimpleAsync(
+        Func<HealthCheckDescriptor, bool> predicate,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(predicate);
+
+        var checks = _checks.Values
+            .Where(c => predicate(new HealthCheckDescriptor(c)))
+            .OrderBy(c => c.Index);
+
+        return CheckSimpleAsync(checks, cancellationToken);
+    }
+
+    /// <summary>
+    /// Executes a single named health check and returns the overall status.
     /// </summary>
     /// <param name="checkName">The name of the health check to execute.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -227,80 +297,24 @@ public sealed class HealthChecker
     /// Determines whether a health check should run based on include and exclude tag filters.
     /// </summary>
     private static bool ShouldRun(
-        string[]? checkTags,
+        IReadOnlyList<string>? checkTags,
         HashSet<string>? include,
         HashSet<string>? exclude)
     {
-        if (checkTags is null || checkTags.Length == 0)
+        // No tags on the check – only run when no filtering is applied
+        if (checkTags is not { Count: > 0 })
             return include is null && exclude is null;
 
-        if (exclude is not null && checkTags.Any(exclude.Contains))
+        // Exclude always wins
+        if (exclude?.Overlaps(checkTags) == true)
             return false;
 
+        // Include acts as a whitelist
         if (include is not null)
-            return checkTags.Any(include.Contains);
+            return include.Overlaps(checkTags);
 
+        // No include filter – run by default
         return true;
-    }
-
-    /// <summary>
-    /// Executes health checks sequentially and short-circuits on unhealthy results.
-    /// </summary>
-    private static async Task<HealthStatus> CheckSimpleAsync(
-        IEnumerable<HealthCheckRegistration> filteredChecks,
-        CancellationToken cancellationToken = default)
-    {
-        var checks = filteredChecks.ToList();
-
-        if (checks.Count == 0)
-            return HealthStatus.Unknown;
-
-        var overall = HealthStatus.Healthy;
-
-        foreach (var check in checks)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            CancellationTokenSource? timeoutCancellationTokenSource = null;
-
-            try
-            {
-                var effectiveToken = cancellationToken;
-
-                if (check.Timeout is not null)
-                {
-                    timeoutCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                    timeoutCancellationTokenSource.CancelAfter(check.Timeout.Value);
-                    effectiveToken = timeoutCancellationTokenSource.Token;
-                }
-
-                var result = await check.Check.CheckHealthAsync(effectiveToken);
-
-                if (result.Status == HealthStatus.Unhealthy)
-                    return HealthStatus.Unhealthy;
-
-                if (result.Status == HealthStatus.Degraded)
-                    overall = HealthStatus.Degraded;
-            }
-            catch (OperationCanceledException) when (timeoutCancellationTokenSource?.IsCancellationRequested == true)
-            {
-                return HealthStatus.Unhealthy;
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch
-            {
-                return HealthStatus.Unhealthy;
-            }
-            finally
-            {
-                timeoutCancellationTokenSource?.Dispose();
-            }
-        }
-
-        return overall;
     }
 
     /// <summary>
@@ -312,7 +326,7 @@ public sealed class HealthChecker
 
         foreach (var status in statuses)
         {
-            if (status == HealthStatus.Unhealthy)
+            if (IsFailure(status))
                 return HealthStatus.Unhealthy;
 
             if (status == HealthStatus.Degraded)
@@ -323,21 +337,79 @@ public sealed class HealthChecker
     }
 
     /// <summary>
+    /// Determines whether a status reported by a check counts as a failure.
+    /// <see cref="HealthStatus.Unknown"/> and undefined values count as failures
+    /// because the check did not confirm the component is healthy.
+    /// </summary>
+    private static bool IsFailure(HealthStatus status)
+        => status is not (HealthStatus.Healthy or HealthStatus.Degraded);
+
+    #region Simple Checks
+
+    private async Task<HealthStatus> CheckSimpleAsync(
+        IEnumerable<HealthCheckRegistration> filteredChecks,
+        CancellationToken cancellationToken)
+    {
+        var checks = filteredChecks.ToList();
+
+        if (checks.Count == 0)
+            return HealthStatus.Unknown;
+
+        // Cancelled on the first failure to stop the remaining checks; GetEntryAsync only throws
+        // when this token is cancelled, so awaiting a check below throws only for the caller's token.
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
+        var remaining = checks
+            .Select(async check => (await GetEntryAsync(check, linkedCts.Token)).Status)
+            .ToList();
+
+        var overall = HealthStatus.Healthy;
+
+        while (remaining.Count > 0)
+        {
+            var completed = await Task.WhenAny(remaining);
+            remaining.Remove(completed);
+
+            var status = await completed;
+
+            if (IsFailure(status))
+            {
+                linkedCts.Cancel();
+                return HealthStatus.Unhealthy;
+            }
+
+            if (status == HealthStatus.Degraded)
+                overall = HealthStatus.Degraded;
+        }
+
+        return overall;
+    }
+
+    #endregion
+
+    /// <summary>
     /// Filters registered health checks using include and exclude tag sets.
     /// </summary>
     private IEnumerable<HealthCheckRegistration> FilterChecks(
         IEnumerable<string>? includeTags,
         IEnumerable<string>? excludeTags)
     {
-        HashSet<string>? include = includeTags is not null && includeTags.Any()
-            ? [.. includeTags]
-            : null;
-
-        HashSet<string>? exclude = excludeTags is not null && excludeTags.Any()
-            ? [.. excludeTags]
-            : null;
+        var include = ToTagSet(includeTags);
+        var exclude = ToTagSet(excludeTags);
 
         return _checks.Values.Where(c => ShouldRun(c.Tags, include, exclude));
+    }
+
+    /// <summary>
+    /// Builds a case-insensitive tag set, or <c>null</c> when no tags are given.
+    /// </summary>
+    private static HashSet<string>? ToTagSet(IEnumerable<string>? tags)
+    {
+        if (tags is null)
+            return null;
+
+        HashSet<string> tagSet = new(tags, StringComparer.OrdinalIgnoreCase);
+        return tagSet.Count > 0 ? tagSet : null;
     }
 
     /// <summary>
@@ -347,28 +419,23 @@ public sealed class HealthChecker
         IEnumerable<HealthCheckRegistration> filteredChecks,
         CancellationToken cancellationToken)
     {
-        List<HealthCheckRegistration> checks = [.. filteredChecks];
+        List<HealthCheckRegistration> checks = [.. filteredChecks.OrderBy(c => c.Index)];
 
         if (checks.Count == 0)
             return new HealthReport { Status = HealthStatus.Unknown, HttpStatusCode = 404 };
 
-        var stopwatch = IncludeDuration ? Stopwatch.StartNew() : null;
+        var start = Stopwatch.GetTimestamp();
 
         HealthReport healthReport = new();
 
         if (Data?.Count > 0)
             healthReport.Data = new Dictionary<string, object?>(Data);
 
-        var result = await ExecuteChecksAsync(checks, stopwatch, cancellationToken);
-
-        healthReport.Checks = [.. result
-            .OrderBy(r => r.Index)
-            .Select(r => r.HealthCheckEntry)];
-
-        stopwatch?.Stop();
+        // Task.WhenAll keeps the input order, so entries stay in registration order
+        healthReport.Checks = await Task.WhenAll(checks.Select(check => GetEntryAsync(check, cancellationToken)));
 
         if (IncludeDuration)
-            healthReport.TotalDurationMs = stopwatch!.ElapsedMilliseconds;
+            healthReport.TotalDurationMs = (long)Stopwatch.GetElapsedTime(start).TotalMilliseconds;
 
         healthReport.Status = GetOverallStatus(healthReport.Checks.Select(c => c.Status));
         healthReport.HttpStatusCode = GetHttpStatusCode(healthReport.Status);
@@ -377,31 +444,24 @@ public sealed class HealthChecker
     }
 
     /// <summary>
-    /// Executes all health checks concurrently while preserving original order.
+    /// Runs a single health check with its timeout and produces a report entry,
+    /// reusing the cached entry while it is fresh.
     /// </summary>
-    private async Task<(int Index, HealthReportEntry HealthCheckEntry)[]> ExecuteChecksAsync(
-        IEnumerable<HealthCheckRegistration> checks,
-        Stopwatch? stopwatch,
-        CancellationToken cancellationToken)
-    {
-        var tasks = checks.Select(async check =>
-            (check.Index, HealthCheckEntry: await ExecuteSingleCheckAsync(check, stopwatch, cancellationToken)));
-
-        return await Task.WhenAll(tasks);
-    }
-
-    /// <summary>
-    /// Executes a single health check and produces a report entry.
-    /// </summary>
-    private async Task<HealthReportEntry> ExecuteSingleCheckAsync(
+    /// <remarks>
+    /// Every failure, including a timeout, becomes an <see cref="HealthStatus.Unhealthy"/> entry.
+    /// The method throws only when <paramref name="cancellationToken"/> is cancelled.
+    /// </remarks>
+    private async Task<HealthReportEntry> GetEntryAsync(
         HealthCheckRegistration check,
-        Stopwatch? stopwatch,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var start = IncludeDuration ? stopwatch!.ElapsedMilliseconds : 0;
-        var entry = new HealthReportEntry { Name = check.Name };
+        if (IsCachingEnabled && check.TryGetCachedEntry(CacheDuration!.Value, out var cachedEntry))
+            return cachedEntry;
+
+        var start = Stopwatch.GetTimestamp();
+        var entry = new HealthReportEntry { Name = check.Name, Tags = check.Tags };
 
         CancellationTokenSource? timeoutCancellationTokenSource = null;
 
@@ -416,24 +476,25 @@ public sealed class HealthChecker
                 effectiveToken = timeoutCancellationTokenSource.Token;
             }
 
-            var result = await check.Check.CheckHealthAsync(effectiveToken);
+            var result = await RunCheckAsync(check, effectiveToken);
 
             entry.Status = result.Status;
             entry.Description = result.Description;
             SetErrorIfRequired(ref entry, exception: result.Exception);
 
+            // Read-only because cached entries are shared between reports
             if (result.Data?.Count > 0)
-                entry.Data = new Dictionary<string, object?>(result.Data);
+                entry.Data = new Dictionary<string, object?>(result.Data).AsReadOnly();
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (OperationCanceledException) when (timeoutCancellationTokenSource?.IsCancellationRequested == true)
         {
             entry.Status = HealthStatus.Unhealthy;
             entry.Description = $"Health check timed out after {check.Timeout?.TotalMilliseconds} ms";
             SetErrorIfRequired(ref entry, errorMessage: "Timeout exceeded");
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
         }
         catch (Exception ex)
         {
@@ -446,16 +507,49 @@ public sealed class HealthChecker
         }
 
         if (IncludeDuration)
-            entry.DurationMs = stopwatch!.ElapsedMilliseconds - start;
+            entry.DurationMs = (long)Stopwatch.GetElapsedTime(start).TotalMilliseconds;
 
-        entry.Tags = check.Tags;
+        if (IsCachingEnabled)
+            check.CacheEntry(entry);
 
         return entry;
     }
 
     /// <summary>
-    /// Maps a health status to an HTTP status code.
+    /// Runs a health check on the thread pool and waits for it until the token is cancelled.
     /// </summary>
+    /// <remarks>
+    /// Running on the thread pool stops synchronous checks from blocking each other, and
+    /// waiting on the token enforces timeouts and cancellation even for checks that ignore it.
+    /// If an earlier run that nobody is waiting for is still in progress, that run is awaited
+    /// instead of starting another, so a check that ignores cancellation can't pile up copies of
+    /// itself across repeated calls.
+    /// </remarks>
+    private static async Task<HealthCheckResult> RunCheckAsync(HealthCheckRegistration check, CancellationToken cancellationToken)
+    {
+        var task = check.GetPendingRun()
+            ?? Task.Run(() => check.Check.CheckHealthAsync(cancellationToken), CancellationToken.None);
+
+        try
+        {
+            return await task.WaitAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            check.SetPendingRun(task);
+
+            // A check that ignored cancellation may still be running; observe its eventual
+            // failure so it doesn't surface as an unobserved task exception.
+            _ = task.ContinueWith(
+                static t => _ = t.Exception,
+                CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
+
+            throw;
+        }
+    }
+
     private int GetHttpStatusCode(HealthStatus status)
         => status switch
         {
@@ -480,13 +574,78 @@ public sealed class HealthChecker
         }
     }
 
+    private bool IsCachingEnabled => CacheDuration > TimeSpan.Zero;
+
     /// <summary>
-    /// Internal registration record for a health check.
+    /// Internal registration for a health check, along with its cached entry
+    /// and any earlier run that is still in progress.
     /// </summary>
-    private sealed record HealthCheckRegistration(
-        int Index,
-        string Name,
-        string[]? Tags,
-        IHealthCheck Check,
-        TimeSpan? Timeout);
+    internal sealed class HealthCheckRegistration(
+        int index,
+        string name,
+        IHealthCheck check,
+        IReadOnlyList<string>? tags,
+        TimeSpan? timeout)
+    {
+        private volatile Task<HealthCheckResult>? _pendingRun;
+        private volatile CachedEntry? _cachedEntry;
+
+        public int Index { get; } = index;
+
+        public string Name { get; } = name;
+
+        public IHealthCheck Check { get; } = check;
+
+        public IReadOnlyList<string>? Tags { get; } = tags;
+
+        public TimeSpan? Timeout { get; } = timeout;
+
+        /// <summary>
+        /// Returns a run that a caller stopped waiting for but that has not finished yet.
+        /// </summary>
+        public Task<HealthCheckResult>? GetPendingRun()
+            => _pendingRun is { IsCompleted: false } run ? run : null;
+
+        public void SetPendingRun(Task<HealthCheckResult> run) => _pendingRun = run;
+
+        public bool TryGetCachedEntry(TimeSpan cacheDuration, out HealthReportEntry entry)
+        {
+            if (_cachedEntry is { } cached && Stopwatch.GetElapsedTime(cached.Timestamp) < cacheDuration)
+            {
+                entry = cached.Entry;
+                return true;
+            }
+
+            entry = default;
+            return false;
+        }
+
+        public void CacheEntry(HealthReportEntry entry) => _cachedEntry = new(entry, Stopwatch.GetTimestamp());
+
+        private sealed record CachedEntry(HealthReportEntry Entry, long Timestamp);
+    }
+}
+
+/// <summary>
+/// Describes a registered health check using read-only metadata
+/// that can be safely exposed for filtering and selection.
+/// </summary>
+/// <remarks>
+/// This descriptor does not allow execution or modification of the health check.
+/// It is primarily used by predicate-based APIs to decide which checks should run
+/// based on their name or tags.
+/// </remarks>
+/// <param name="Name">The unique name of the health check.</param>
+/// <param name="Tags">
+/// Optional tags associated with the health check.
+/// Tags can be used to group and filter checks during execution.
+/// </param>
+public sealed record HealthCheckDescriptor(
+    string Name,
+    IEnumerable<string>? Tags)
+{
+    internal HealthCheckDescriptor(HealthChecker.HealthCheckRegistration r)
+        : this(r.Name, r.Tags)
+    {
+    }
 }
